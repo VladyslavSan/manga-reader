@@ -1,0 +1,15 @@
+# Gradle and Kotlin generated files
+.gradle/
+.kotlin/
+**/build/
+
+# Local IDE settings
+.idea/
+*.iml
+.vscode/
+local.properties
+
+# OS metadata
+.DS_Store
+Thumbs.db
+Desktop.ini

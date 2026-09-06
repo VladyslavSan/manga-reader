@@ -52,8 +52,8 @@ For development on macOS or Linux with JDK 21:
 ./gradlew :composeApp:run
 ```
 
-Native installers are built for Windows x64 and macOS Apple Silicon. Every merge
-to `main` publishes them on the
+Native installers are built for Windows x64 and macOS Apple Silicon and
+published on the
 [Releases page](https://github.com/VladyslavSan/manga-reader/releases/latest).
 Installers include Java; these builds are unsigned and not notarized.
 

@@ -5,6 +5,7 @@ on:
     branches: [main]
   push:
     branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -13,9 +14,6 @@ permissions:
 concurrency:
   group: desktop-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
-env:
-  APP_VERSION: 1.0.${{ github.run_number }}
 
 jobs:
   build:
@@ -41,6 +39,24 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: gradle
+      - name: Resolve version
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF" in
+            # jpackage refuses a major version of 0 on macOS. Fail here with a clear
+            # message rather than several minutes into packaging.
+            refs/tags/v0|refs/tags/v0.*)
+              echo "::error::Tag $GITHUB_REF_NAME has major version 0, which jpackage rejects on macOS. Tag v1.0.0 or later."
+              exit 1 ;;
+            refs/tags/v*)
+              version="${GITHUB_REF_NAME#v}" ;;
+            # Branch and PR builds never publish, so any valid version will do.
+            *)
+              version="1.0.${GITHUB_RUN_NUMBER}" ;;
+          esac
+          echo "APP_VERSION=$version" >> "$GITHUB_ENV"
+          echo "Packaging version $version"
       # Version goes in as ORG_GRADLE_PROJECT_appVersion, not -PappVersion: on the
       # Windows runner the command-line form reached Gradle truncated at the first
       # dot ("1" instead of "1.0.2"), and configuring the msi/exe then failed.
@@ -59,6 +75,7 @@ jobs:
         # upload-artifact roots an artifact at the least common ancestor of its files,
         # so uploading msi/ and exe/ direct from the build dir would nest them. Staging
         # flat keeps every artifact root-level, so the release job can glob dist/*.
+        # Runs on every build so a tag never exercises an untested path.
         run: |
           set -euo pipefail
           mkdir -p staging
@@ -79,8 +96,8 @@ jobs:
             composeApp/build/compose/logs/
           retention-days: 14
           if-no-files-found: warn
-      - name: Upload installers from main
-        if: github.ref == 'refs/heads/main'
+      - name: Upload installers for release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: manga-reader-${{ matrix.platform }}-${{ github.sha }}
@@ -92,7 +109,7 @@ jobs:
   release:
     name: Publish release
     needs: build
-    if: github.ref == 'refs/heads/main'
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -110,9 +127,9 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          ls -l dist
           test "$(ls dist | wc -l)" -eq 3  # macOS dmg, plus msi + exe for Windows
-          gh release create "v${APP_VERSION}" \
-            --target "${{ github.sha }}" \
-            --title "Manga Reader ${APP_VERSION}" \
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Manga Reader ${GITHUB_REF_NAME#v}" \
             --notes 'Installers are unsigned and macOS builds are not notarized, so the OS will warn on first launch. A Java runtime is bundled.' \
             dist/*

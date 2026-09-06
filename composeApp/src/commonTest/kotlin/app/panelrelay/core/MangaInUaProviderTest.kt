@@ -38,6 +38,22 @@ class MangaInUaProviderTest {
         assertEquals(4, calls.size)
     }
 
+    @Test fun encodesFormFieldsLikeFormUrlEncoded() {
+        assertEquals("a=1&b=2", formUrlEncode("a" to "1", "b" to "2"))
+        assertEquals("q=", formUrlEncode("q" to ""))
+        assertEquals("q=a+b", formUrlEncode("q" to "a b"))
+        // this_link carries a full URL when the category is 54; its separators must
+        // be escaped or the site reads a truncated link.
+        assertEquals(
+            "this_link=https%3A%2F%2Fmanga.in.ua%2Fmangas%2Ftest%2F63027-test.html",
+            formUrlEncode("this_link" to "https://manga.in.ua/mangas/test/63027-test.html"),
+        )
+        // Multi-byte characters encode per UTF-8 byte, not per char.
+        assertEquals("q=%D1%82", formUrlEncode("q" to "\u0442"))
+        assertEquals("q=-._~", formUrlEncode("q" to "-._~"))
+        assertEquals("q=%26%3D%25%2B", formUrlEncode("q" to "&=%+"))
+    }
+
     private fun noNetwork() = object : NativeHttpTransport {
         override suspend fun request(url: String, method: String, body: String?, headers: Map<String, String>) = error("unused")
     }

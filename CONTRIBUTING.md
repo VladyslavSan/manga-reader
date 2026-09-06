@@ -32,9 +32,20 @@ git push origin v1.2.0
 
 The tag is the version: `v1.2.0` packages as `1.2.0`. Start at `v1.0.0` or later
 — jpackage rejects a major version of `0` on macOS, and CI fails fast with that
-message rather than partway through packaging. Branch and PR builds package as
-`1.0.<workflow run number>`, which is never published. Local packaging defaults
-to `1.0.0` and can be overridden with `-PappVersion=1.2.0`.
+message rather than partway through packaging.
+
+Branch and PR builds, which are never published, take the last release tag and
+advance its patch by the number of commits since that tag: five commits past
+`v1.2.0` packages as `1.2.5`, and three past `v1.2.7` as `1.2.10`, so the version
+never drops below the last release. Before the first tag exists there is nothing
+to count from, so they fall back to `1.0.<total commit count>`. Two branches
+equally far from the same tag therefore produce the same version — fine for
+builds that are never released, but it means an artifact filename does not
+identify a specific run. Resolving this needs the tags and full history, which is
+why the checkout uses `fetch-depth: 0`.
+
+Local packaging defaults to `1.0.0` and can be overridden with
+`-PappVersion=1.2.0`.
 
 Builds are unsigned and macOS builds are not notarized. Windows SmartScreen
 warns on first launch, and macOS reports the app as damaged until the quarantine

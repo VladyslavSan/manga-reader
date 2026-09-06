@@ -14,6 +14,7 @@ internal data class ReaderSettings(
     val pageWidth: Float = 1f,
     val sidebarVisible: Boolean = true,
     val hideToolbars: Boolean = false,
+    val hideSidebar: Boolean = false,
     val checkForUpdates: Boolean = true,
 ) {
     fun normalized() = copy(pageWidth = if (pageWidth.isFinite()) pageWidth.coerceIn(.25f, 1f) else 1f)

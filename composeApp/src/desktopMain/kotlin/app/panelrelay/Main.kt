@@ -187,6 +187,7 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
     val pageWidth = settings.pageWidth
     val sidebarVisible = settings.sidebarVisible
     val hideToolbars = settings.hideToolbars
+    val hideSidebar = settings.hideSidebar
 
     fun updateSettings(updated: ReaderSettings) {
         settings = updated.normalized()
@@ -210,11 +211,21 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
     val chapterListState = rememberLazyListState()
     val readerListState = rememberLazyListState()
     val pageScrollStates = remember(chapter?.sourceId) { mutableMapOf<Int, ScrollState>() }
-    var horizontalViewportHeight by remember { mutableStateOf(0) }
+    // Measured from the reader itself in both modes. Deriving it from layoutInfo at
+    // keypress time made the step depend on where the list happened to be.
+    var readerViewportHeight by remember { mutableStateOf(0) }
     val pager = rememberPagerState(pageCount = { pages.size })
     val readerFocus = remember { FocusRequester() }
     val smallStep = with(LocalDensity.current) { 180.dp.toPx() }
     val autoHideActive = hideToolbars && !showGallery
+    // Overlaid rather than laid out in the Row, so revealing it never resizes the
+    // reader and never rescales the page.
+    val autoHideSidebarActive = hideSidebar && !showGallery
+    val upcomingChapter = nextChapterAfter(series?.chapters.orEmpty(), chapter?.sourceId)
+    val atChapterEnd = pages.isNotEmpty() && if (horizontal) {
+        val page = pageScrollStates[pager.currentPage]
+        pager.currentPage == pages.lastIndex && (page == null || page.value >= page.maxValue)
+    } else !readerListState.canScrollForward
     val revealEdge = with(LocalDensity.current) { 12.dp.toPx() }
     val hideBuffer = with(LocalDensity.current) { 16.dp.toPx() }
 
@@ -298,6 +309,13 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
         if (index >= 0) setRead(currentSeries.sourceId, currentSeries.chapters.take(index + 1).mapTo(mutableSetOf()) { it.sourceId }, true)
     }
 
+    suspend fun openNextChapter() {
+        val current = series ?: return
+        val next = nextChapterAfter(current.chapters, chapter?.sourceId) ?: return
+        showGallery = false
+        selectChapter(current, next)
+    }
+
     fun navigate(action: ReaderNavigationAction) {
         scope.launch {
             when (action) {
@@ -310,16 +328,25 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
                 ReaderNavigationAction.SmallBackward -> readerListState.animateScrollBy(-smallStep)
                 ReaderNavigationAction.SmallForward -> readerListState.animateScrollBy(smallStep)
                 ReaderNavigationAction.ViewportBackward, ReaderNavigationAction.ViewportForward -> {
-                    val direction = if (action == ReaderNavigationAction.ViewportBackward) -1 else 1
+                    val forward = action == ReaderNavigationAction.ViewportForward
+                    val direction = if (forward) 1 else -1
                     if (horizontal) {
-                        pageScrollStates[pager.currentPage]?.animateScrollBy(direction * horizontalViewportHeight.toFloat())
+                        val page = pageScrollStates[pager.currentPage]
+                        val exhausted = page == null || page.value >= page.maxValue
+                        if (forward && exhausted && pager.currentPage == pages.lastIndex) openNextChapter()
+                        else page?.animateScrollBy(direction * readerViewportHeight.toFloat())
+                    } else if (forward && !readerListState.canScrollForward) {
+                        openNextChapter()
                     } else {
-                        val height = readerListState.layoutInfo.run { viewportEndOffset - viewportStartOffset }
+                        val height = readerViewportHeight.takeIf { it > 0 }
+                            ?: readerListState.layoutInfo.run { viewportEndOffset - viewportStartOffset }
                         readerListState.animateScrollBy(direction * height.toFloat())
                     }
                 }
                 ReaderNavigationAction.PreviousPage -> if (pager.currentPage > 0) pager.animateScrollToPage(pager.currentPage - 1)
-                ReaderNavigationAction.NextPage -> if (pager.currentPage < pages.lastIndex) pager.animateScrollToPage(pager.currentPage + 1)
+                ReaderNavigationAction.NextPage ->
+                    if (pager.currentPage < pages.lastIndex) pager.animateScrollToPage(pager.currentPage + 1)
+                    else openNextChapter()
             }
         }
     }
@@ -334,7 +361,7 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
             pages = chapter?.pages.orEmpty()
         }
     }
-    LaunchedEffect(showGallery, chapter?.sourceId, sidebarVisible, hideToolbars, toolbarsRevealed, busy, showAddDialog, showSettings) {
+    LaunchedEffect(showGallery, chapter?.sourceId, sidebarVisible, hideToolbars, hideSidebar, toolbarsRevealed, busy, showAddDialog, showSettings) {
         if (!showGallery && !busy && !showAddDialog && !showSettings && !toolbarsRevealed) readerFocus.requestFocus()
     }
     LaunchedEffect(chapter?.sourceId, pages.size) {
@@ -382,6 +409,11 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
                 }
                 Text("Move to the top edge to reveal the bars. They hide when the pointer leaves the toolbar area.", color = textMuted)
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Auto-hide sidebar while reading", Modifier.weight(1f))
+                    Switch(hideSidebar, { updateSettings(settings.copy(hideSidebar = it)) })
+                }
+                Text("The sidebar then opens over the page instead of shrinking it. Ctrl/Cmd+B still opens and closes it.", color = textMuted)
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Horizontal pages", Modifier.weight(1f))
                     Switch(horizontal, { updateSettings(settings.copy(horizontal = it)) })
                 }
@@ -394,6 +426,76 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
         },
         confirmButton = { TextButton(onClick = { showSettings = false }) { Text("Done") } },
     )
+
+    val sidebarPane: @Composable () -> Unit = {
+        Sidebar(
+            library = library,
+            series = series,
+            chapter = chapter,
+            status = status,
+            downloadStatus = downloadStatus,
+            downloading = downloading,
+            busy = busy,
+            showTools = showTools,
+            readChapters = readChapters,
+            offlineChapters = offlineChapters,
+            selectionMode = selectionMode,
+            selectedChapterIds = selectedChapterIds,
+            chapterListState = chapterListState,
+            onAdd = { showAddDialog = true },
+            onGallery = { showGallery = true },
+            onToggleTools = { showTools = !showTools },
+            onOpenSeries = { scope.launch { openSeries(it) } },
+            onOpenChapter = { item -> series?.let { active ->
+                showGallery = false
+                scope.launch { selectChapter(active, item) }
+            } },
+            onToggleSelectionMode = {
+                selectionMode = !selectionMode
+                if (!selectionMode) { selectedChapterIds = emptySet(); selectionAnchorId = null }
+            },
+            onSelect = ::updateSelection,
+            onSetOneRead = { item, read -> series?.let { setRead(it.sourceId, setOf(item.sourceId), read) } },
+            onSetSelectedRead = { read -> series?.let { setRead(it.sourceId, selectedChapterIds, read, clearSelection = true) } },
+            onClearSelection = { selectedChapterIds = emptySet(); selectionAnchorId = null },
+            onRefresh = refresh@{
+                val active = series ?: return@refresh
+                scope.launch {
+                    busy = true; status = "Refreshing chapter registry…"
+                    runCatching { repository.register(active.url) }
+                        .onSuccess { refreshed -> syncMetadata(); series = refreshed; status = "Registry refreshed · ${refreshed.chapters.size} chapters." }
+                        .onFailure { status = it.message ?: "Registry refresh failed." }
+                    busy = false
+                }
+            },
+            onDownload = download@{
+                val active = series ?: return@download
+                if (downloading) { pauseRequested = true; downloadStatus = "Pausing after the current request…" }
+                else {
+                    pauseRequested = false; downloading = true; downloadStatus = "Starting background download…"
+                    scope.launch {
+                        val id = active.sourceId
+                        val result = repository.downloadSeries(id, { pauseRequested }) {
+                            progress = it
+                            downloadStatus = "${it.chapterIndex}/${it.chapterCount} · ${it.cachedPages} pages · ${it.currentChapter}"
+                        }
+                        syncMetadata()
+                        if (series?.sourceId == id) series = repository.snapshot.series.first { it.sourceId == id }
+                        downloadStatus = result.message; downloading = false
+                    }
+                }
+            },
+            onPause = { pauseRequested = true; downloadStatus = "Pausing after the current request…" },
+            onExport = export@{
+                val active = series ?: return@export
+                chooseExportFile(active.title)?.let { destination -> scope.launch {
+                    busy = true
+                    val count = ArchiveExporter(store).exportDownloaded(repository.snapshot.series.first { it.sourceId == active.sourceId }, destination)
+                    status = "Exported $count pages to $destination"; busy = false
+                } }
+            },
+        )
+    }
 
     val appBar: @Composable () -> Unit = {
         Row(Modifier.fillMaxWidth().background(surface).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -431,80 +533,15 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
             }
     ) {
         Row(Modifier.fillMaxSize()) {
+            // Pinned: occupies a Row slot, so the reader pane is narrower by design.
             androidx.compose.animation.AnimatedVisibility(
-                visible = sidebarVisible,
+                visible = sidebarVisible && !autoHideSidebarActive,
                 enter = expandHorizontally(tween(400, easing = FastOutSlowInEasing), expandFrom = Alignment.Start) +
                     slideInHorizontally(tween(400, easing = FastOutSlowInEasing)) { -it } + fadeIn(tween(400, easing = FastOutSlowInEasing)),
                 exit = shrinkHorizontally(tween(400, easing = FastOutSlowInEasing), shrinkTowards = Alignment.Start) +
                     slideOutHorizontally(tween(400, easing = FastOutSlowInEasing)) { -it } + fadeOut(tween(400, easing = FastOutSlowInEasing)),
             ) {
-                Sidebar(
-                    library = library,
-                    series = series,
-                    chapter = chapter,
-                    status = status,
-                    downloadStatus = downloadStatus,
-                    downloading = downloading,
-                    busy = busy,
-                    showTools = showTools,
-                    readChapters = readChapters,
-                    offlineChapters = offlineChapters,
-                    selectionMode = selectionMode,
-                    selectedChapterIds = selectedChapterIds,
-                    chapterListState = chapterListState,
-                    onAdd = { showAddDialog = true },
-                    onGallery = { showGallery = true },
-                    onToggleTools = { showTools = !showTools },
-                    onOpenSeries = { scope.launch { openSeries(it) } },
-                    onOpenChapter = { item -> series?.let { active ->
-                        showGallery = false
-                        scope.launch { selectChapter(active, item) }
-                    } },
-                    onToggleSelectionMode = {
-                        selectionMode = !selectionMode
-                        if (!selectionMode) { selectedChapterIds = emptySet(); selectionAnchorId = null }
-                    },
-                    onSelect = ::updateSelection,
-                    onSetOneRead = { item, read -> series?.let { setRead(it.sourceId, setOf(item.sourceId), read) } },
-                    onSetSelectedRead = { read -> series?.let { setRead(it.sourceId, selectedChapterIds, read, clearSelection = true) } },
-                    onClearSelection = { selectedChapterIds = emptySet(); selectionAnchorId = null },
-                    onRefresh = refresh@{
-                        val active = series ?: return@refresh
-                        scope.launch {
-                            busy = true; status = "Refreshing chapter registry…"
-                            runCatching { repository.register(active.url) }
-                                .onSuccess { refreshed -> syncMetadata(); series = refreshed; status = "Registry refreshed · ${refreshed.chapters.size} chapters." }
-                                .onFailure { status = it.message ?: "Registry refresh failed." }
-                            busy = false
-                        }
-                    },
-                    onDownload = download@{
-                        val active = series ?: return@download
-                        if (downloading) { pauseRequested = true; downloadStatus = "Pausing after the current request…" }
-                        else {
-                            pauseRequested = false; downloading = true; downloadStatus = "Starting background download…"
-                            scope.launch {
-                                val id = active.sourceId
-                                val result = repository.downloadSeries(id, { pauseRequested }) {
-                                    progress = it
-                                    downloadStatus = "${it.chapterIndex}/${it.chapterCount} · ${it.cachedPages} pages · ${it.currentChapter}"
-                                }
-                                syncMetadata()
-                                if (series?.sourceId == id) series = repository.snapshot.series.first { it.sourceId == id }
-                                downloadStatus = result.message; downloading = false
-                            }
-                        }
-                    },
-                    onPause = { pauseRequested = true; downloadStatus = "Pausing after the current request…" },
-                    onExport = export@{
-                        val active = series ?: return@export
-                        chooseExportFile(active.title)?.let { destination -> scope.launch {
-                            busy = true
-                            val count = ArchiveExporter(store).exportDownloaded(repository.snapshot.series.first { it.sourceId == active.sourceId }, destination)
-                            status = "Exported $count pages to $destination"; busy = false
-                        } }
-                    },
-                )
+                sidebarPane()
             }
 
             Box(Modifier.weight(1f).fillMaxHeight().onGloballyPositioned { sidebarEdge = it.positionInRoot().x }) {
@@ -516,7 +553,7 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
                             repository, series, chapter, pages, horizontal, pageWidth, busy, readChapters, offlineChapters,
                             readerListState, pager, readerFocus,
                             pageScrollStates = pageScrollStates,
-                            onViewportHeight = { horizontalViewportHeight = it },
+                            onViewportHeight = { readerViewportHeight = it },
                             onGallery = { showGallery = true },
                             onSetRead = { read -> series?.let { s -> chapter?.let { setRead(s.sourceId, setOf(it.sourceId), read) } } },
                             onMarkThrough = ::markThroughCurrent,
@@ -547,7 +584,15 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
                     }
                 }
                 androidx.compose.animation.AnimatedVisibility(
-                    visible = autoHideActive && !sidebarVisible,
+                    visible = sidebarVisible && autoHideSidebarActive,
+                    modifier = Modifier.align(Alignment.CenterStart),
+                    enter = slideInHorizontally(tween(400, easing = FastOutSlowInEasing)) { -it } + fadeIn(tween(400, easing = FastOutSlowInEasing)),
+                    exit = slideOutHorizontally(tween(400, easing = FastOutSlowInEasing)) { -it } + fadeOut(tween(400, easing = FastOutSlowInEasing)),
+                ) {
+                    sidebarPane()
+                }
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = !sidebarVisible && (autoHideActive || autoHideSidebarActive),
                     modifier = Modifier.align(Alignment.TopStart).padding(start = 12.dp),
                     enter = fadeIn(tween(400, easing = FastOutSlowInEasing)),
                     exit = fadeOut(tween(400, easing = FastOutSlowInEasing)),
@@ -557,6 +602,25 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
                         modifier = Modifier.background(surface.copy(alpha = .9f), RoundedCornerShape(12.dp)),
                     ) {
                         Icon(SidebarIcon, "Show sidebar (Ctrl/Cmd+B)", tint = textMuted)
+                    }
+                }
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = !showGallery && atChapterEnd && upcomingChapter != null,
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp),
+                    enter = slideInVertically(tween(400, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(400, easing = FastOutSlowInEasing)),
+                    exit = slideOutVertically(tween(400, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(400, easing = FastOutSlowInEasing)),
+                ) {
+                    Row(
+                        Modifier.background(surface.copy(alpha = .96f), RoundedCornerShape(14.dp))
+                            .border(1.dp, border, RoundedCornerShape(14.dp))
+                            .padding(start = 16.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text("Chapter finished", color = textMuted, maxLines = 1)
+                        Button(onClick = { scope.launch { openNextChapter() } }) {
+                            Text(upcomingChapter?.label?.take(40) ?: "Next chapter", maxLines = 1)
+                        }
                     }
                 }
             }
@@ -790,7 +854,11 @@ private fun ReaderPane(
                 snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index == pages.lastIndex }
                     .distinctUntilChanged().collect { if (it) onSetRead(true) }
             }
-            LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize().onSizeChanged { onViewportHeight(it.height) },
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
                 itemsIndexed(pages, key = { _, it -> it.url }) { _, page ->
                     PageImage(repository, series!!, chapter!!, page, width, onCacheChanged)
                 }

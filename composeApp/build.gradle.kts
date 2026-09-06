@@ -36,7 +36,10 @@ compose.desktop {
         mainClass = "app.panelrelay.MainKt"
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Exe)
-            includeAllModules = true
+            // From `gradlew :composeApp:suggestRuntimeModules`. Bundling only these
+            // instead of every JDK module is most of the download size. Re-run that
+            // task after adding a dependency that reaches into a new part of the JDK.
+            modules("java.instrument", "java.management", "java.net.http", "jdk.unsupported")
             packageName = "Manga Reader"
             packageVersion = providers.gradleProperty("appVersion").orElse("1.0.0").get()
             description = "A local-first manga reader"

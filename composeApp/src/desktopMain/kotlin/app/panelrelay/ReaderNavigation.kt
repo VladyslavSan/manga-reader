@@ -2,21 +2,29 @@ package app.panelrelay
 
 import androidx.compose.ui.input.key.Key
 
-internal enum class ReaderNavigationAction { SmallBackward, SmallForward, ViewportBackward, ViewportForward, PreviousPage, NextPage }
+internal enum class ReaderNavigationAction { SmallBackward, SmallForward, ViewportBackward, ViewportForward, PreviousPage, NextPage, FirstPage, LastPage }
 
-internal fun readerNavigationAction(key: Key, horizontal: Boolean) = if (horizontal) {
+internal fun readerNavigationAction(key: Key, horizontal: Boolean, shift: Boolean = false): ReaderNavigationAction? {
     when (key) {
-        Key.DirectionLeft, Key.DirectionUp, Key.PageUp -> ReaderNavigationAction.PreviousPage
-        Key.DirectionRight, Key.DirectionDown, Key.PageDown -> ReaderNavigationAction.NextPage
-        else -> null
+        Key.MoveHome -> return ReaderNavigationAction.FirstPage
+        Key.MoveEnd -> return ReaderNavigationAction.LastPage
+        Key.PageUp -> return ReaderNavigationAction.ViewportBackward
+        Key.PageDown -> return ReaderNavigationAction.ViewportForward
+        Key.Spacebar -> return if (shift) ReaderNavigationAction.ViewportBackward else ReaderNavigationAction.ViewportForward
     }
-} else {
-    when (key) {
-        Key.DirectionUp -> ReaderNavigationAction.SmallBackward
-        Key.DirectionDown -> ReaderNavigationAction.SmallForward
-        Key.DirectionLeft, Key.PageUp -> ReaderNavigationAction.ViewportBackward
-        Key.DirectionRight, Key.PageDown -> ReaderNavigationAction.ViewportForward
-        else -> null
+    return if (horizontal) {
+        when (key) {
+            Key.DirectionLeft, Key.DirectionUp -> ReaderNavigationAction.PreviousPage
+            Key.DirectionRight, Key.DirectionDown -> ReaderNavigationAction.NextPage
+            else -> null
+        }
+    } else {
+        when (key) {
+            Key.DirectionUp -> ReaderNavigationAction.SmallBackward
+            Key.DirectionDown -> ReaderNavigationAction.SmallForward
+            Key.DirectionLeft -> ReaderNavigationAction.ViewportBackward
+            Key.DirectionRight -> ReaderNavigationAction.ViewportForward
+            else -> null
+        }
     }
 }
-

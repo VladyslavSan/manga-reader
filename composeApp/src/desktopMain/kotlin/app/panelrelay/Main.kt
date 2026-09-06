@@ -1,5 +1,16 @@
 package app.panelrelay
 
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
@@ -7,6 +18,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,6 +43,9 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -40,6 +55,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -53,6 +69,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -62,9 +81,17 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -90,30 +117,50 @@ import java.nio.file.Path
 
 private val background = Color(0xFF11100F)
 private val surface = Color(0xFF191715)
-private val border = Color(0xFF3A3631)
+private val border = Color(0xFF625B54)
 private val accent = Color(0xFFF06543)
-private val textMuted = Color(0xFFAAA39A)
+private val textMuted = Color(0xFFC3BBB2)
+private val textPrimary = Color(0xFFF3EEE8)
 private val readGreen = Color(0xFF67C587)
 private val offlineBlue = Color(0xFF67AEE8)
 
-fun main() = application {
-    val rawHttp = remember { DesktopHttpTransport() }
-    val windowState = rememberWindowState(width = 1400.dp, height = 900.dp)
-    Window(
-        onCloseRequest = { rawHttp.close(); exitApplication() },
-        title = "Panel Relay",
-        state = windowState,
-    ) {
-        LaunchedEffect(Unit) { window.minimumSize = Dimension(980, 640) }
-        val http = remember { RespectfulHttpTransport(rawHttp) }
-        val store = remember { DesktopLibraryStore() }
-        val repository = remember { MangaRepository(MangaInUaProvider(http), http, store) }
-        MaterialTheme(colorScheme = darkColorScheme(primary = accent, background = background, surface = surface)) {
-            ReaderApp(repository, store)
+fun main() {
+    // Set the native appearance before AWT creates any windows.
+    if (System.getProperty("os.name").startsWith("Mac", ignoreCase = true)) {
+        System.setProperty("apple.awt.application.appearance", "NSAppearanceNameDarkAqua")
+    }
+    application {
+        val rawHttp = remember { DesktopHttpTransport() }
+        val windowState = rememberWindowState(width = 1400.dp, height = 900.dp)
+        Window(
+            onCloseRequest = { rawHttp.close(); exitApplication() },
+            title = "Manga Reader",
+            state = windowState,
+        ) {
+            LaunchedEffect(Unit) { window.minimumSize = Dimension(980, 640) }
+            val http = remember { RespectfulHttpTransport(rawHttp) }
+            val store = remember { DesktopLibraryStore() }
+            val repository = remember { MangaRepository(MangaInUaProvider(http), http, store) }
+            MaterialTheme(colorScheme = darkColorScheme(
+                primary = accent,
+                onPrimary = Color(0xFF160D09),
+                background = background,
+                onBackground = textPrimary,
+                surface = surface,
+                onSurface = textPrimary,
+                surfaceVariant = Color(0xFF302B26),
+                onSurfaceVariant = textMuted,
+                outline = border,
+            )) {
+                Surface(Modifier.fillMaxSize(), color = background, contentColor = textPrimary) {
+                    ReaderApp(repository, store)
+                }
+            }
         }
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
     val scope = rememberCoroutineScope()
@@ -128,10 +175,25 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
     var downloading by remember { mutableStateOf(false) }
     var pauseRequested by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf<DownloadProgress?>(null) }
-    var horizontal by remember { mutableStateOf(false) }
-    var pageWidth by remember { mutableStateOf(1f) }
+    val settingsStore = remember(store.root) { DesktopSettingsStore(store.root) }
+    var settings by remember(settingsStore) { mutableStateOf(settingsStore.load()) }
+    var settingsSaveError by remember { mutableStateOf<String?>(null) }
+    val horizontal = settings.horizontal
+    val pageWidth = settings.pageWidth
+    val sidebarVisible = settings.sidebarVisible
+    val hideToolbars = settings.hideToolbars
+
+    fun updateSettings(updated: ReaderSettings) {
+        settings = updated.normalized()
+        settingsSaveError = runCatching { settingsStore.save(settings) }.exceptionOrNull()?.let {
+            "Could not save settings: ${it.message}"
+        }
+    }
     var showAddDialog by remember { mutableStateOf(false) }
     var showGallery by remember { mutableStateOf(true) }
+    var showSettings by remember { mutableStateOf(false) }
+    var toolbarsRevealed by remember { mutableStateOf(false) }
+    var revealedToolbarHeight by remember { mutableStateOf(0) }
     var showTools by remember { mutableStateOf(false) }
     var readChapters by remember { mutableStateOf<Map<String, Set<String>>>(emptyMap()) }
     var offlineChapters by remember { mutableStateOf<Map<String, Set<String>>>(emptyMap()) }
@@ -142,9 +204,23 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
 
     val chapterListState = rememberLazyListState()
     val readerListState = rememberLazyListState()
+    val pageScrollStates = remember(chapter?.sourceId) { mutableMapOf<Int, ScrollState>() }
+    var horizontalViewportHeight by remember { mutableStateOf(0) }
     val pager = rememberPagerState(pageCount = { pages.size })
     val readerFocus = remember { FocusRequester() }
     val smallStep = with(LocalDensity.current) { 180.dp.toPx() }
+    val autoHideActive = hideToolbars && !showGallery
+    val revealEdge = with(LocalDensity.current) { 12.dp.toPx() }
+    val hideBuffer = with(LocalDensity.current) { 16.dp.toPx() }
+
+    var sidebarEdge by remember { mutableStateOf(0f) }
+
+    fun updateToolbarHover(x: Float, y: Float) {
+        if (!autoHideActive || showSettings || showAddDialog) return
+        toolbarsRevealed = x >= sidebarEdge && if (toolbarsRevealed) y <= revealedToolbarHeight + hideBuffer else y <= revealEdge
+    }
+
+    LaunchedEffect(autoHideActive) { toolbarsRevealed = false }
 
     fun syncMetadata() {
         library = repository.snapshot.series
@@ -174,7 +250,7 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
     suspend fun selectChapter(selectedSeries: MangaSeries, selectedChapter: MangaChapter) {
         busy = true
         status = "Loading ${selectedChapter.label}…"
-        runCatching { repository.ensurePages(selectedSeries.sourceId, selectedChapter.sourceId) }
+        runCatching { repository.openChapter(selectedSeries.sourceId, selectedChapter.sourceId) }
             .onSuccess { loaded ->
                 syncMetadata()
                 series = repository.snapshot.series.first { it.sourceId == selectedSeries.sourceId }
@@ -220,10 +296,23 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
     fun navigate(action: ReaderNavigationAction) {
         scope.launch {
             when (action) {
+                ReaderNavigationAction.FirstPage -> if (pages.isNotEmpty()) {
+                    if (horizontal) pager.animateScrollToPage(0) else readerListState.animateScrollToItem(0)
+                }
+                ReaderNavigationAction.LastPage -> if (pages.isNotEmpty()) {
+                    if (horizontal) pager.animateScrollToPage(pages.lastIndex) else readerListState.animateScrollToItem(pages.lastIndex)
+                }
                 ReaderNavigationAction.SmallBackward -> readerListState.animateScrollBy(-smallStep)
                 ReaderNavigationAction.SmallForward -> readerListState.animateScrollBy(smallStep)
-                ReaderNavigationAction.ViewportBackward -> readerListState.animateScrollBy(-readerListState.layoutInfo.run { viewportEndOffset - viewportStartOffset } * .9f)
-                ReaderNavigationAction.ViewportForward -> readerListState.animateScrollBy(readerListState.layoutInfo.run { viewportEndOffset - viewportStartOffset } * .9f)
+                ReaderNavigationAction.ViewportBackward, ReaderNavigationAction.ViewportForward -> {
+                    val direction = if (action == ReaderNavigationAction.ViewportBackward) -1 else 1
+                    if (horizontal) {
+                        pageScrollStates[pager.currentPage]?.animateScrollBy(direction * horizontalViewportHeight.toFloat())
+                    } else {
+                        val height = readerListState.layoutInfo.run { viewportEndOffset - viewportStartOffset }
+                        readerListState.animateScrollBy(direction * height.toFloat())
+                    }
+                }
                 ReaderNavigationAction.PreviousPage -> if (pager.currentPage > 0) pager.animateScrollToPage(pager.currentPage - 1)
                 ReaderNavigationAction.NextPage -> if (pager.currentPage < pages.lastIndex) pager.animateScrollToPage(pager.currentPage + 1)
             }
@@ -240,7 +329,9 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
             pages = chapter?.pages.orEmpty()
         }
     }
-    LaunchedEffect(showGallery) { if (!showGallery) readerFocus.requestFocus() }
+    LaunchedEffect(showGallery, chapter?.sourceId, sidebarVisible, hideToolbars, toolbarsRevealed, busy, showAddDialog, showSettings) {
+        if (!showGallery && !busy && !showAddDialog && !showSettings && !toolbarsRevealed) readerFocus.requestFocus()
+    }
     LaunchedEffect(chapter?.sourceId, pages.size) {
         if (chapter != null) {
             readerListState.scrollToItem(0)
@@ -269,90 +360,202 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
         },
     )
 
-    Row(
-        Modifier.fillMaxSize().background(background).onPreviewKeyEvent { event ->
-            if (event.key == Key.ShiftLeft || event.key == Key.ShiftRight) shiftPressed = event.type == KeyEventType.KeyDown
-            false
-        }
-    ) {
-        Sidebar(
-            library = library,
-            series = series,
-            chapter = chapter,
-            status = status,
-            downloadStatus = downloadStatus,
-            downloading = downloading,
-            busy = busy,
-            showTools = showTools,
-            readChapters = readChapters,
-            offlineChapters = offlineChapters,
-            selectionMode = selectionMode,
-            selectedChapterIds = selectedChapterIds,
-            chapterListState = chapterListState,
-            onAdd = { showAddDialog = true },
-            onGallery = { showGallery = true },
-            onToggleTools = { showTools = !showTools },
-            onOpenSeries = { scope.launch { openSeries(it) } },
-            onOpenChapter = { item -> series?.let { scope.launch { selectChapter(it, item) } } },
-            onToggleSelectionMode = {
-                selectionMode = !selectionMode
-                if (!selectionMode) { selectedChapterIds = emptySet(); selectionAnchorId = null }
-            },
-            onSelect = ::updateSelection,
-            onSetOneRead = { item, read -> series?.let { setRead(it.sourceId, setOf(item.sourceId), read) } },
-            onSetSelectedRead = { read -> series?.let { setRead(it.sourceId, selectedChapterIds, read, clearSelection = true) } },
-            onClearSelection = { selectedChapterIds = emptySet(); selectionAnchorId = null },
-            onRefresh = refresh@{
-                val active = series ?: return@refresh
-                scope.launch {
-                    busy = true; status = "Refreshing chapter registry…"
-                    runCatching { repository.register(active.url) }
-                        .onSuccess { refreshed -> syncMetadata(); series = refreshed; status = "Registry refreshed · ${refreshed.chapters.size} chapters." }
-                        .onFailure { status = it.message ?: "Registry refresh failed." }
-                    busy = false
+    if (showSettings) AlertDialog(
+        onDismissRequest = { showSettings = false },
+        title = { Text("Settings") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                settingsSaveError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                Text("Reading", fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Show sidebar", Modifier.weight(1f))
+                    Switch(sidebarVisible, { updateSettings(settings.copy(sidebarVisible = it)) })
                 }
-            },
-            onDownload = download@{
-                val active = series ?: return@download
-                if (downloading) { pauseRequested = true; downloadStatus = "Pausing after the current request…" }
-                else {
-                    pauseRequested = false; downloading = true; downloadStatus = "Starting background download…"
-                    scope.launch {
-                        val id = active.sourceId
-                        val result = repository.downloadSeries(id, { pauseRequested }) {
-                            progress = it
-                            downloadStatus = "${it.chapterIndex}/${it.chapterCount} · ${it.cachedPages} pages · ${it.currentChapter}"
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Auto-hide top bars while reading", Modifier.weight(1f))
+                    Switch(hideToolbars, { updateSettings(settings.copy(hideToolbars = it)) })
+                }
+                Text("Move to the top edge to reveal the bars. They hide when the pointer leaves the toolbar area.", color = textMuted)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Horizontal pages", Modifier.weight(1f))
+                    Switch(horizontal, { updateSettings(settings.copy(horizontal = it)) })
+                }
+                Text("Page width · ${(pageWidth * 100).toInt()}%")
+                Slider(pageWidth, { updateSettings(settings.copy(pageWidth = it)) }, valueRange = .25f..1f)
+                Text("25% — 100% of the reading area", color = textMuted)
+                Text("Keyboard controls", fontWeight = FontWeight.Bold)
+                Text("Ctrl/Cmd+B: toggle sidebar\nCtrl/Cmd+T: reveal top bars while reading\nCtrl/Cmd+comma: settings\nEscape: reveal top bars\n\nPage Up / Down and Shift+Space / Space: scroll one screen.\nArrow keys: scroll vertically or switch images in horizontal mode.\nHome / End: first / last image.\n\nTab / Shift+Tab: move between controls\nEnter / Space: activate a focused button", color = textMuted)
+            }
+        },
+        confirmButton = { TextButton(onClick = { showSettings = false }) { Text("Done") } },
+    )
+
+    val appBar: @Composable () -> Unit = {
+        Row(Modifier.fillMaxWidth().background(surface).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (sidebarVisible || !autoHideActive) IconButton(onClick = { updateSettings(settings.copy(sidebarVisible = !sidebarVisible)) }) {
+                Icon(SidebarIcon, if (sidebarVisible) "Hide sidebar (Ctrl/Cmd+B)" else "Show sidebar (Ctrl/Cmd+B)", tint = if (sidebarVisible) accent else textMuted)
+            } else Box(Modifier.width(48.dp).height(48.dp))
+            Text("Manga Reader", Modifier.weight(1f), color = textMuted)
+            if (!showGallery) IconButton(onClick = { updateSettings(settings.copy(hideToolbars = true)); toolbarsRevealed = false }) {
+                Icon(ToolbarIcon, "Auto-hide top bars")
+            }
+            IconButton(onClick = { showSettings = true }) { Icon(SettingsIcon, "Settings (Ctrl/Cmd+comma)") }
+        }
+    }
+
+    Box(
+        Modifier.fillMaxSize().background(background)
+            .onPointerEvent(PointerEventType.Move) { event -> event.changes.firstOrNull()?.let { updateToolbarHover(it.position.x, it.position.y) } }
+            .onPointerEvent(PointerEventType.Enter) { event -> event.changes.firstOrNull()?.let { updateToolbarHover(it.position.x, it.position.y) } }
+            .onPointerEvent(PointerEventType.Exit) { if (!showSettings && !showAddDialog) toolbarsRevealed = false }
+            .onPreviewKeyEvent { event ->
+                if (event.key == Key.ShiftLeft || event.key == Key.ShiftRight) shiftPressed = event.type == KeyEventType.KeyDown
+                if (showAddDialog || showSettings || event.type != KeyEventType.KeyDown || event.isAltPressed) {
+                    false
+                } else if (event.isCtrlPressed || event.isMetaPressed) {
+                    when (event.key) {
+                        Key.B -> { updateSettings(settings.copy(sidebarVisible = !sidebarVisible)); true }
+                        Key.T -> if (autoHideActive) { toolbarsRevealed = true; true } else false
+                        Key.Comma -> { showSettings = true; true }
+                        else -> false
+                    }
+                } else if (event.key == Key.Escape && !showGallery && hideToolbars) {
+                    toolbarsRevealed = true
+                    true
+                } else false
+            }
+    ) {
+        Row(Modifier.fillMaxSize()) {
+            androidx.compose.animation.AnimatedVisibility(
+                visible = sidebarVisible,
+                enter = expandHorizontally(tween(400, easing = FastOutSlowInEasing), expandFrom = Alignment.Start) +
+                    slideInHorizontally(tween(400, easing = FastOutSlowInEasing)) { -it } + fadeIn(tween(400, easing = FastOutSlowInEasing)),
+                exit = shrinkHorizontally(tween(400, easing = FastOutSlowInEasing), shrinkTowards = Alignment.Start) +
+                    slideOutHorizontally(tween(400, easing = FastOutSlowInEasing)) { -it } + fadeOut(tween(400, easing = FastOutSlowInEasing)),
+            ) {
+                Sidebar(
+                    library = library,
+                    series = series,
+                    chapter = chapter,
+                    status = status,
+                    downloadStatus = downloadStatus,
+                    downloading = downloading,
+                    busy = busy,
+                    showTools = showTools,
+                    readChapters = readChapters,
+                    offlineChapters = offlineChapters,
+                    selectionMode = selectionMode,
+                    selectedChapterIds = selectedChapterIds,
+                    chapterListState = chapterListState,
+                    onAdd = { showAddDialog = true },
+                    onGallery = { showGallery = true },
+                    onToggleTools = { showTools = !showTools },
+                    onOpenSeries = { scope.launch { openSeries(it) } },
+                    onOpenChapter = { item -> series?.let { active ->
+                        showGallery = false
+                        scope.launch { selectChapter(active, item) }
+                    } },
+                    onToggleSelectionMode = {
+                        selectionMode = !selectionMode
+                        if (!selectionMode) { selectedChapterIds = emptySet(); selectionAnchorId = null }
+                    },
+                    onSelect = ::updateSelection,
+                    onSetOneRead = { item, read -> series?.let { setRead(it.sourceId, setOf(item.sourceId), read) } },
+                    onSetSelectedRead = { read -> series?.let { setRead(it.sourceId, selectedChapterIds, read, clearSelection = true) } },
+                    onClearSelection = { selectedChapterIds = emptySet(); selectionAnchorId = null },
+                    onRefresh = refresh@{
+                        val active = series ?: return@refresh
+                        scope.launch {
+                            busy = true; status = "Refreshing chapter registry…"
+                            runCatching { repository.register(active.url) }
+                                .onSuccess { refreshed -> syncMetadata(); series = refreshed; status = "Registry refreshed · ${refreshed.chapters.size} chapters." }
+                                .onFailure { status = it.message ?: "Registry refresh failed." }
+                            busy = false
                         }
-                        syncMetadata()
-                        if (series?.sourceId == id) series = repository.snapshot.series.first { it.sourceId == id }
-                        downloadStatus = result.message; downloading = false
+                    },
+                    onDownload = download@{
+                        val active = series ?: return@download
+                        if (downloading) { pauseRequested = true; downloadStatus = "Pausing after the current request…" }
+                        else {
+                            pauseRequested = false; downloading = true; downloadStatus = "Starting background download…"
+                            scope.launch {
+                                val id = active.sourceId
+                                val result = repository.downloadSeries(id, { pauseRequested }) {
+                                    progress = it
+                                    downloadStatus = "${it.chapterIndex}/${it.chapterCount} · ${it.cachedPages} pages · ${it.currentChapter}"
+                                }
+                                syncMetadata()
+                                if (series?.sourceId == id) series = repository.snapshot.series.first { it.sourceId == id }
+                                downloadStatus = result.message; downloading = false
+                            }
+                        }
+                    },
+                    onPause = { pauseRequested = true; downloadStatus = "Pausing after the current request…" },
+                    onExport = export@{
+                        val active = series ?: return@export
+                        chooseExportFile(active.title)?.let { destination -> scope.launch {
+                            busy = true
+                            val count = ArchiveExporter(store).exportDownloaded(repository.snapshot.series.first { it.sourceId == active.sourceId }, destination)
+                            status = "Exported $count pages to $destination"; busy = false
+                        } }
+                    },
+                )
+            }
+
+            Box(Modifier.weight(1f).fillMaxHeight().onGloballyPositioned { sidebarEdge = it.positionInRoot().x }) {
+                Column(Modifier.fillMaxSize()) {
+                    if (!autoHideActive) appBar()
+                    if (showGallery) GalleryPane(library, readChapters, offlineChapters, repository, { scope.launch { openSeries(it) } }, { showAddDialog = true }, Modifier.weight(1f))
+                    else Box(Modifier.weight(1f).fillMaxHeight()) {
+                        ReaderPane(
+                            repository, series, chapter, pages, horizontal, pageWidth, busy, readChapters, offlineChapters,
+                            readerListState, pager, readerFocus,
+                            pageScrollStates = pageScrollStates,
+                            onViewportHeight = { horizontalViewportHeight = it },
+                            onGallery = { showGallery = true },
+                            onSetRead = { read -> series?.let { s -> chapter?.let { setRead(s.sourceId, setOf(it.sourceId), read) } } },
+                            onMarkThrough = ::markThroughCurrent,
+                            showToolbar = !hideToolbars,
+                            onNavigate = ::navigate,
+                            onCacheChanged = { syncMetadata() },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+
                     }
                 }
-            },
-            onPause = { pauseRequested = true; downloadStatus = "Pausing after the current request…" },
-            onExport = export@{
-                val active = series ?: return@export
-                chooseExportFile(active.title)?.let { destination -> scope.launch {
-                    busy = true
-                    val count = ArchiveExporter(store).exportDownloaded(repository.snapshot.series.first { it.sourceId == active.sourceId }, destination)
-                    status = "Exported $count pages to $destination"; busy = false
-                } }
-            },
-        )
-
-        if (showGallery) GalleryPane(library, readChapters, offlineChapters, repository, { scope.launch { openSeries(it) } }, { showAddDialog = true }, Modifier.weight(1f))
-        else ReaderPane(
-            repository, series, chapter, pages, horizontal, pageWidth, busy, readChapters, offlineChapters,
-            readerListState, pager, readerFocus,
-            onGallery = { showGallery = true },
-            onSetRead = { read -> series?.let { s -> chapter?.let { setRead(s.sourceId, setOf(it.sourceId), read) } } },
-            onMarkThrough = ::markThroughCurrent,
-            onHorizontal = { horizontal = it },
-            onWidth = { pageWidth = it },
-            onNavigate = ::navigate,
-            onCacheChanged = { syncMetadata() },
-            modifier = Modifier.weight(1f),
-        )
+                if (autoHideActive) androidx.compose.animation.AnimatedVisibility(
+                    visible = toolbarsRevealed,
+                    modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
+                    enter = slideInVertically(tween(400, easing = FastOutSlowInEasing)) { -it } + fadeIn(tween(400, easing = FastOutSlowInEasing)),
+                    exit = slideOutVertically(tween(400, easing = FastOutSlowInEasing)) { -it } + fadeOut(tween(400, easing = FastOutSlowInEasing)),
+                ) {
+                    Column(Modifier.fillMaxWidth().onSizeChanged { revealedToolbarHeight = it.height }) {
+                        appBar()
+                        Box(Modifier.fillMaxWidth()) {
+                            ReaderToolbar(
+                                series, chapter, readChapters, offlineChapters,
+                                onGallery = { showGallery = true },
+                                onSetRead = { read -> series?.let { active -> chapter?.let { setRead(active.sourceId, setOf(it.sourceId), read) } } },
+                                onMarkThrough = ::markThroughCurrent,
+                            )
+                        }
+                    }
+                }
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = autoHideActive && !sidebarVisible,
+                    modifier = Modifier.align(Alignment.TopStart).padding(start = 12.dp),
+                    enter = fadeIn(tween(400, easing = FastOutSlowInEasing)),
+                    exit = fadeOut(tween(400, easing = FastOutSlowInEasing)),
+                ) {
+                    IconButton(
+                        onClick = { updateSettings(settings.copy(sidebarVisible = true)) },
+                        modifier = Modifier.background(surface.copy(alpha = .9f), RoundedCornerShape(12.dp)),
+                    ) {
+                        Icon(SidebarIcon, "Show sidebar (Ctrl/Cmd+B)", tint = textMuted)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -407,9 +610,9 @@ private fun Sidebar(
         series?.let {
             OutlinedButton(onClick = onToggleTools, modifier = Modifier.fillMaxWidth()) { Text(if (showTools) "Hide tools" else "Downloads & tools") }
             if (showTools) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                Button(onClick = onDownload, modifier = Modifier.fillMaxWidth()) { Text(if (downloading) "Pause download" else "Download", maxLines = 1) }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(enabled = !busy && !downloading, onClick = onRefresh, modifier = Modifier.weight(1f)) { Text("Refresh") }
-                    Button(onClick = onDownload, modifier = Modifier.weight(1f)) { Text(if (downloading) "Pause" else "Download") }
                     OutlinedButton(enabled = !downloading, onClick = onExport, modifier = Modifier.weight(1f)) { Text("Export") }
                 }
             }
@@ -523,38 +726,44 @@ private fun CoverImage(repository: MangaRepository, series: MangaSeries) {
 }
 
 @Composable
+private fun ReaderToolbar(
+    series: MangaSeries?, chapter: MangaChapter?, read: Map<String, Set<String>>, offline: Map<String, Set<String>>,
+    onGallery: () -> Unit, onSetRead: (Boolean) -> Unit, onMarkThrough: () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().background(surface).padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(chapter?.label ?: "No chapter selected", fontWeight = FontWeight.Bold)
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val seriesId = series?.sourceId
+            val chapterId = chapter?.sourceId
+            val isRead = seriesId != null && chapterId != null && chapterId in read[seriesId].orEmpty()
+            val isOffline = seriesId != null && chapterId != null && chapterId in offline[seriesId].orEmpty()
+            OutlinedButton(onClick = onGallery) { Text("Library") }
+            if (isOffline) Text("↓ Offline", color = offlineBlue)
+            OutlinedButton(enabled = chapter != null, onClick = { onSetRead(!isRead) }) { Text(if (isRead) "Mark unread" else "Mark read") }
+            OutlinedButton(enabled = chapter != null, onClick = onMarkThrough) { Text("Mark through here read") }
+
+        }
+    }
+}
+
+@Composable
 private fun ReaderPane(
     repository: MangaRepository, series: MangaSeries?, chapter: MangaChapter?, pages: List<MangaPage>,
     horizontal: Boolean, width: Float, busy: Boolean, read: Map<String, Set<String>>, offline: Map<String, Set<String>>,
     listState: androidx.compose.foundation.lazy.LazyListState, pager: androidx.compose.foundation.pager.PagerState,
-    focus: FocusRequester, onGallery: () -> Unit, onSetRead: (Boolean) -> Unit, onMarkThrough: () -> Unit,
-    onHorizontal: (Boolean) -> Unit, onWidth: (Float) -> Unit, onNavigate: (ReaderNavigationAction) -> Unit,
+    focus: FocusRequester, pageScrollStates: MutableMap<Int, ScrollState>, onViewportHeight: (Int) -> Unit,
+    onGallery: () -> Unit, onSetRead: (Boolean) -> Unit, onMarkThrough: () -> Unit,
+    showToolbar: Boolean, onNavigate: (ReaderNavigationAction) -> Unit,
     onCacheChanged: () -> Unit, modifier: Modifier,
 ) {
     Column(
-        modifier.fillMaxHeight().focusRequester(focus).focusable().onPreviewKeyEvent { event ->
-            if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-            val action = readerNavigationAction(event.key, horizontal) ?: return@onPreviewKeyEvent false
+        modifier.fillMaxHeight().focusRequester(focus).onKeyEvent { event ->
+            if (event.type != KeyEventType.KeyDown || event.isCtrlPressed || event.isMetaPressed || event.isAltPressed) return@onKeyEvent false
+            val action = readerNavigationAction(event.key, horizontal, event.isShiftPressed) ?: return@onKeyEvent false
             onNavigate(action); true
-        }
+        }.focusable()
     ) {
-        Column(Modifier.fillMaxWidth().background(surface).padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(chapter?.label ?: "No chapter selected", fontWeight = FontWeight.Bold)
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                val seriesId = series?.sourceId
-                val chapterId = chapter?.sourceId
-                val isRead = seriesId != null && chapterId != null && chapterId in read[seriesId].orEmpty()
-                val isOffline = seriesId != null && chapterId != null && chapterId in offline[seriesId].orEmpty()
-                OutlinedButton(onClick = onGallery) { Text("Library") }
-                if (isOffline) Text("↓ Offline", color = offlineBlue)
-                OutlinedButton(enabled = chapter != null, onClick = { onSetRead(!isRead) }) { Text(if (isRead) "Mark unread" else "Mark read") }
-                OutlinedButton(enabled = chapter != null, onClick = onMarkThrough) { Text("Mark through here read") }
-                OutlinedButton(onClick = { onHorizontal(false) }) { Text("Vertical") }
-                OutlinedButton(onClick = { onHorizontal(true) }) { Text("Horizontal") }
-                Text("Width ${(width * 100).toInt()}%", color = textMuted, fontSize = 11.sp)
-                Slider(width, onWidth, valueRange = .5f..1f, modifier = Modifier.width(170.dp))
-            }
-        }
+        if (showToolbar) ReaderToolbar(series, chapter, read, offline, onGallery, onSetRead, onMarkThrough)
         if (pages.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             if (busy) CircularProgressIndicator(color = accent) else Text("Select a chapter.", color = textMuted)
         } else if (horizontal) {
@@ -562,7 +771,12 @@ private fun ReaderPane(
                 if (pager.currentPage == pages.lastIndex) onSetRead(true)
             }
             HorizontalPager(pager, Modifier.fillMaxSize()) { index ->
-                Box(Modifier.fillMaxSize().padding(10.dp), contentAlignment = Alignment.Center) {
+                val scrollState = pageScrollStates.getOrPut(index) { ScrollState(0) }
+                Box(
+                    Modifier.fillMaxSize().onSizeChanged { onViewportHeight(it.height) }
+                        .verticalScroll(scrollState).padding(10.dp),
+                    contentAlignment = Alignment.TopCenter,
+                ) {
                     PageImage(repository, series!!, chapter!!, pages[index], width, onCacheChanged)
                 }
             }

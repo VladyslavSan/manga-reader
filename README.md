@@ -1,6 +1,6 @@
-# Panel Relay
+# Manga Reader
 
-Panel Relay is a Windows-first, local-first manga reader built with Kotlin
+Manga Reader is a Windows-first, local-first manga reader built with Kotlin
 Multiplatform and Compose Multiplatform. It currently supports `manga.in.ua`
 and keeps the library, chapter registry, reading progress, covers, and manga
 pages on the device.
@@ -22,7 +22,7 @@ backend and no proxy server.
 - ZIP export of downloaded pages
 - Atomic cache writes and restart-safe JSON state
 
-## Run on Windows
+## Run
 
 Requirements: JDK 21 available through `JAVA_HOME` or `PATH`.
 
@@ -30,8 +30,10 @@ The Gradle wrapper is included and pins Gradle 9.0.0. The first run downloads
 Gradle and project dependencies, so it requires internet access. A separate
 Gradle installation is not needed. Run commands from the repository root.
 
+On Windows (PowerShell):
+
 ```powershell
-.\run-windows.ps1
+.\gradlew.bat :composeApp:run
 ```
 
 Application data is stored outside the repository:
@@ -39,6 +41,7 @@ Application data is stored outside the repository:
 ```text
 %USERPROFILE%\.panel-relay\
   library.json
+  settings.json
   covers\
   pages\
 ```
@@ -51,12 +54,39 @@ For development on macOS or Linux with JDK 21:
 
 Native installers are currently configured for Windows only.
 
+## Keyboard and layout
+
+Use the **sidebar icon** or **Ctrl+B** (Windows/Linux) / **Cmd+B** (macOS) to
+show or hide the sidebar. The **Settings** icon opens reading options and
+keyboard help. Page width ranges from **25% to 100%** of the reading area.
+
+Enable **Auto-hide top bars while reading** in Settings or use the toolbar icon.
+Move the pointer into the top 12 dp to reveal them; moving below the bars plus
+a 16 dp buffer hides them again. **Escape** or **Ctrl/Cmd+T** also reveals them
+temporarily. Revealing the bars keeps auto-hide enabled, and they overlay the
+reader without shifting the pages. Disable auto-hide in Settings to pin them.
+Settings also opens with **Ctrl/Cmd+comma**. Reading mode, page width, sidebar visibility, and auto-hide preferences are
+saved automatically in `~/.panel-relay/settings.json` and restored on startup.
+
+When the reader has focus:
+
+- **Page Up / Page Down** and **Shift+Space / Space** scroll by exactly one visible screen height, stopping at the content boundaries.
+- In vertical mode, **Up / Down** scroll in small steps and **Left / Right** scroll by one screen.
+- In horizontal mode, **arrow keys** switch images; tall images can be scrolled with the mouse or Page Up / Page Down.
+- **Home / End** jump to the first / last image in the chapter.
+- **Tab / Shift+Tab** move between controls; **Enter / Space** activate buttons.
+
+The interface uses a dark palette, including the native macOS title bar.
+The existing `.panel-relay` data folder is retained so existing libraries remain available.
+
 ## Tests
 
 The default suite is deterministic and never contacts the manga website:
 
+On Windows (PowerShell):
+
 ```powershell
-.\test.ps1
+.\gradlew.bat :composeApp:desktopTest
 ```
 
 On macOS or Linux:
@@ -68,8 +98,21 @@ On macOS or Linux:
 The live source test is opt-in, throttled, fetches metadata only, and downloads
 no manga images:
 
+On Windows (PowerShell):
+
 ```powershell
-.\test.ps1 -LiveSource
+$env:PANEL_RELAY_LIVE_TESTS = "1"
+try {
+    .\gradlew.bat :composeApp:desktopTest --rerun-tasks
+} finally {
+    Remove-Item Env:PANEL_RELAY_LIVE_TESTS
+}
+```
+
+On macOS or Linux:
+
+```sh
+PANEL_RELAY_LIVE_TESTS=1 ./gradlew :composeApp:desktopTest --rerun-tasks
 ```
 
 ## Project layout
@@ -82,8 +125,6 @@ no manga images:
 ├── gradle.properties            Gradle and Kotlin settings
 ├── gradle/wrapper/              Pinned Gradle wrapper
 ├── gradlew / gradlew.bat        Cross-platform build entry points
-├── run-windows.ps1              Windows run helper
-├── test.ps1                     Windows test helper
 └── composeApp/
     ├── build.gradle.kts         Desktop target, dependencies and packaging
     └── src/

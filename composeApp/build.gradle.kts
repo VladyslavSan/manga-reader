@@ -35,10 +35,10 @@ compose.desktop {
         mainClass = "app.panelrelay.MainKt"
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe)
-            packageName = "Panel Relay"
+            packageName = "Manga Reader"
             packageVersion = "0.1.0"
             description = "A local-first manga reader"
-            vendor = "Panel Relay"
+            vendor = "Manga Reader"
         }
     }
 }

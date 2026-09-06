@@ -84,14 +84,17 @@ class MangaRepository(
         store.save(snapshot)
     }
 
+    suspend fun openChapter(seriesId: String, chapterId: String): List<MangaPage> {
+        val pages = ensurePages(seriesId, chapterId)
+        snapshot = rememberChapter(snapshot, seriesId, chapterId)
+        store.save(snapshot)
+        return pages
+    }
+
     suspend fun ensurePages(seriesId: String, chapterId: String): List<MangaPage> {
         val series = snapshot.series.first { it.sourceId == seriesId }
         val chapter = series.chapters.first { it.sourceId == chapterId }
-        if (chapter.pages.isNotEmpty()) {
-            snapshot = rememberChapter(snapshot, seriesId, chapterId)
-            store.save(snapshot)
-            return chapter.pages
-        }
+        if (chapter.pages.isNotEmpty()) return chapter.pages
         val pages = provider.loadPages(chapter)
         val latestSeries = snapshot.series.first { it.sourceId == seriesId }
         val latestChapter = latestSeries.chapters.first { it.sourceId == chapterId }
@@ -99,11 +102,7 @@ class MangaRepository(
         val updatedSeries = latestSeries.copy(chapters = latestSeries.chapters.map {
             if (it.sourceId == chapterId) updatedChapter else it
         })
-        snapshot = rememberChapter(
-            snapshot.copy(series = snapshot.series.map { if (it.sourceId == seriesId) updatedSeries else it }),
-            seriesId,
-            chapterId,
-        )
+        snapshot = snapshot.copy(series = snapshot.series.map { if (it.sourceId == seriesId) updatedSeries else it })
         store.save(snapshot)
         return pages
     }

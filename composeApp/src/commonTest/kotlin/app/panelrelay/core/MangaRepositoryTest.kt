@@ -12,8 +12,8 @@ import kotlin.test.assertTrue
 class MangaRepositoryTest {
     @Test fun persistsMultipleTitlesProgressAndRefresh() = runTest {
         val provider = FakeProvider(); val store = MemoryStore(); val repo = MangaRepository(provider, provider.transport, store)
-        repo.initialize(); repo.register("https://source.test/one"); repo.ensurePages("one", "one-2")
-        repo.register("https://source.test/two"); repo.ensurePages("two", "two-1")
+        repo.initialize(); repo.register("https://source.test/one"); repo.openChapter("one", "one-2")
+        repo.register("https://source.test/two"); repo.openChapter("two", "two-1")
         repo.setChaptersRead("one", setOf("one-1", "one-2"), true)
         provider.extra = true
         val refreshed = repo.register("https://source.test/one")
@@ -30,11 +30,62 @@ class MangaRepositoryTest {
         assertTrue(repo.snapshot.series.single().chapters.all { it.pages.isNotEmpty() })
     }
 
+    @Test fun downloadsPreserveReadingHistoryAcrossRestart() = runTest {
+        for (cachedManifest in listOf(false, true)) {
+            val provider = FakeProvider()
+            val store = MemoryStore()
+            val repo = MangaRepository(provider, provider.transport, store)
+            repo.initialize()
+            repo.register("https://source.test/one")
+            repo.openChapter("one", "one-1")
+            if (cachedManifest) repo.ensurePages("one", "one-2")
+            repo.register("https://source.test/two")
+            repo.openChapter("two", "two-1")
+            repo.setChapterRead("two", "two-1", true)
+            val before = repo.snapshot
+
+            val result = repo.downloadSeries("one", { false }, {})
+            assertTrue(result.completed)
+            val restored = MangaRepository(provider, provider.transport, store).initialize()
+            assertEquals(before.lastSeriesId, restored.lastSeriesId)
+            assertEquals(before.lastChapterId, restored.lastChapterId)
+            assertEquals(before.lastChapterBySeries, restored.lastChapterBySeries)
+            assertEquals(before.readChaptersBySeries, restored.readChaptersBySeries)
+            assertEquals(setOf("one-1", "one-2"), restored.offlineChaptersBySeries["one"])
+
+            repo.openChapter("one", "one-2")
+            assertEquals("one-2", store.state.lastChapterBySeries["one"])
+            assertEquals("one", store.state.lastSeriesId)
+            assertEquals("one-2", store.state.lastChapterId)
+        }
+    }
+
+    @Test fun pausedDownloadsDoNotCreateReadingHistory() = runTest {
+        val provider = FakeProvider()
+        val store = MemoryStore()
+        val repo = MangaRepository(provider, provider.transport, store)
+        repo.initialize()
+        repo.register("https://source.test/one")
+        val before = repo.snapshot
+        var pause = false
+        val result = repo.downloadSeries("one", { pause }, { pause = true })
+        assertTrue(!result.completed)
+        assertEquals(1, result.cachedPages)
+        val restored = MangaRepository(provider, provider.transport, store).initialize()
+        assertEquals(before.lastSeriesId, restored.lastSeriesId)
+        assertEquals(before.lastChapterId, restored.lastChapterId)
+        assertEquals(before.lastChapterBySeries, restored.lastChapterBySeries)
+        assertEquals(before.readChaptersBySeries, restored.readChaptersBySeries)
+    }
+
     private class FakeProvider : MangaProvider {
         var extra = false
         override val id = "fake"
         val transport = object : NativeHttpTransport {
-            override suspend fun request(url: String, method: String, body: String?, headers: Map<String, String>) = error("unused")
+            override suspend fun request(url: String, method: String, body: String?, headers: Map<String, String>) = NativeHttpResponse(
+                200, mapOf("content-type" to "image/jpeg"),
+                ByteArray(128).also { it[0] = 0xFF.toByte(); it[1] = 0xD8.toByte() },
+            )
         }
         override fun recognizes(url: String) = url.startsWith("https://source.test/")
         override suspend fun loadSeries(url: String): MangaSeries {

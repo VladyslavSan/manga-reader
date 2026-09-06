@@ -64,27 +64,35 @@ jobs:
         if: runner.os == 'macOS'
         env:
           ORG_GRADLE_PROJECT_appVersion: ${{ env.APP_VERSION }}
-        run: ./gradlew --no-daemon :composeApp:desktopTest :composeApp:packageDistributionForCurrentOS
+        run: ./gradlew --no-daemon :composeApp:desktopTest :composeApp:createDistributable
       - name: Test and package (Windows)
         if: runner.os == 'Windows'
         env:
           ORG_GRADLE_PROJECT_appVersion: ${{ env.APP_VERSION }}
-        run: .\gradlew.bat --no-daemon :composeApp:desktopTest :composeApp:packageDistributionForCurrentOS
-      - name: Stage installers
+        run: .\gradlew.bat --no-daemon :composeApp:desktopTest :composeApp:createDistributable
+      # Zip on the build runner, not after upload: upload-artifact drops the
+      # executable bit and follows symlinks, which would break a macOS .app bundle.
+      - name: Package portable app (macOS)
+        if: runner.os == 'macOS'
         shell: bash
-        # jpackage names its output "Manga Reader-<version>.<ext>". Rename into one
-        # flat dir so release assets carry the platform and no percent-encoded spaces,
-        # and so the release job can glob dist/*. Runs on every build, so a tag never
-        # exercises an untested path.
         run: |
           set -euo pipefail
           mkdir -p staging
-          cd composeApp/build/compose/binaries/main
-          for f in dmg/*.dmg exe/*.exe; do
-            [ -e "$f" ] || continue
-            mv "$f" "$GITHUB_WORKSPACE/staging/manga-reader-${APP_VERSION}-${{ matrix.platform }}.${f##*.}"
-          done
-          ls -l "$GITHUB_WORKSPACE/staging"
+          shopt -s nullglob
+          apps=(composeApp/build/compose/binaries/main/app/*.app)
+          [ ${#apps[@]} -eq 1 ] || { echo "::error::expected one .app, found ${#apps[@]}"; exit 1; }
+          ditto -c -k --keepParent "${apps[0]}" "staging/manga-reader-${APP_VERSION}-${{ matrix.platform }}.zip"
+          ls -l staging
+      - name: Package portable app (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path staging | Out-Null
+          $app = @(Get-ChildItem 'composeApp\build\compose\binaries\main\app' -Directory)
+          if ($app.Count -ne 1) { throw "expected one app directory, found $($app.Count)" }
+          Compress-Archive -Path $app[0].FullName -DestinationPath "staging\manga-reader-$env:APP_VERSION-${{ matrix.platform }}.zip"
+          Get-ChildItem staging
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -127,8 +135,18 @@ jobs:
         run: |
           set -euo pipefail
           ls -l dist
-          test "$(ls dist | wc -l)" -eq 2  # one dmg, one exe
+          test "$(ls dist | wc -l)" -eq 2  # one zip per platform
+          printf '%s\n' \
+            'Portable build - unzip and run, no installation. A Java runtime is bundled,' \
+            'so Java does not need to be installed separately.' \
+            '' \
+            'These builds are unsigned and macOS builds are not notarized:' \
+            '' \
+            '- Windows: SmartScreen warns on first launch. Choose More info, then Run anyway.' \
+            '- macOS: Gatekeeper may report the app as damaged. Clear the quarantine flag:' \
+            '  `xattr -dr com.apple.quarantine "Manga Reader.app"`' \
+            > notes.md
           gh release create "$GITHUB_REF_NAME" \
             --title "Manga Reader ${GITHUB_REF_NAME#v}" \
-            --notes 'Installers are unsigned and macOS builds are not notarized, so the OS will warn on first launch. A Java runtime is bundled.' \
+            --notes-file notes.md \
             dist/*

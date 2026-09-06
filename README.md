@@ -52,10 +52,15 @@ For development on macOS or Linux with JDK 21:
 ./gradlew :composeApp:run
 ```
 
-Native installers are built for Windows x64 and macOS Apple Silicon and
-published on the
+Portable builds for Windows x64 and macOS Apple Silicon are published on the
 [Releases page](https://github.com/VladyslavSan/manga-reader/releases/latest).
-Installers include Java; these builds are unsigned and not notarized.
+Unzip and run - there is no installer, and Java is bundled. The builds are
+unsigned and not notarized, so Windows SmartScreen warns on first launch and
+macOS needs the quarantine flag cleared:
+
+```sh
+xattr -dr com.apple.quarantine "Manga Reader.app"
+```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the PR workflow and CI details.
 

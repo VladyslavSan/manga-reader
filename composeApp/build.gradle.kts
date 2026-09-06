@@ -8,6 +8,7 @@ plugins {
 }
 
 kotlin {
+    jvmToolchain(21)
     jvm("desktop")
 
     sourceSets {
@@ -34,11 +35,20 @@ compose.desktop {
     application {
         mainClass = "app.panelrelay.MainKt"
         nativeDistributions {
-            targetFormats(TargetFormat.Msi, TargetFormat.Exe)
+            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Exe)
+            includeAllModules = true
             packageName = "Manga Reader"
             packageVersion = "0.1.0"
             description = "A local-first manga reader"
             vendor = "Manga Reader"
+            macOS {
+                bundleID = "io.github.vladyslavsan.mangareader"
+            }
+            windows {
+                upgradeUuid = "f39292fc-d53d-4c31-9ee2-807b977b09bc"
+                menuGroup = "Manga Reader"
+                shortcut = true
+            }
         }
     }
 }

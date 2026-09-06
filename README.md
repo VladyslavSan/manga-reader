@@ -1,6 +1,6 @@
 # Manga Reader
 
-Manga Reader is a Windows-first, local-first manga reader built with Kotlin
+Manga Reader is a local-first manga reader built with Kotlin
 Multiplatform and Compose Multiplatform. It currently supports `manga.in.ua`
 and keeps the library, chapter registry, reading progress, covers, and manga
 pages on the device.
@@ -52,7 +52,12 @@ For development on macOS or Linux with JDK 21:
 ./gradlew :composeApp:run
 ```
 
-Native installers are currently configured for Windows only.
+Native installers are built for Windows x64 and macOS (Apple Silicon and Intel).
+After a PR merges to `main`, download the matching installer from the latest
+successful [Desktop workflow run](https://github.com/VladyslavSan/manga-reader/actions/workflows/desktop.yml).
+Installers include Java; these builds are unsigned and not notarized.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the PR workflow and CI details.
 
 ## Keyboard and layout
 

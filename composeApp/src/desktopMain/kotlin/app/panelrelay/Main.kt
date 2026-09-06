@@ -110,9 +110,11 @@ import app.panelrelay.core.RespectfulHttpTransport
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import org.jetbrains.skia.Image
+import java.awt.Desktop
 import java.awt.Dimension
 import java.awt.FileDialog
 import java.awt.Frame
+import java.net.URI
 import java.nio.file.Path
 
 private val background = Color(0xFF11100F)
@@ -153,7 +155,10 @@ fun main() {
                 outline = border,
             )) {
                 Surface(Modifier.fillMaxSize(), color = background, contentColor = textPrimary) {
-                    ReaderApp(repository, store)
+                    Column(Modifier.fillMaxSize()) {
+                        UpdateNotice(store.root)
+                        ReaderApp(repository, store)
+                    }
                 }
             }
         }
@@ -820,4 +825,44 @@ private fun chooseExportFile(title: String): Path? {
     dialog.file = title.replace(Regex("[<>:\"/\\|?*]"), "_") + ".zip"
     dialog.isVisible = true
     return dialog.directory?.let { directory -> dialog.file?.let { Path.of(directory, it) } }
+}
+
+/**
+ * Offers the newest release when one exists. Silent when the check is switched off,
+ * when running unpackaged, or when GitHub cannot be reached - an update notice is
+ * never worth an error in front of the reader.
+ */
+@Composable
+private fun UpdateNotice(root: Path) {
+    var release by remember { mutableStateOf<LatestRelease?>(null) }
+    var dismissed by remember { mutableStateOf(false) }
+    LaunchedEffect(root) {
+        val running = currentVersion() ?: return@LaunchedEffect
+        if (!DesktopSettingsStore(root).load().checkForUpdates) return@LaunchedEffect
+        val latest = fetchLatestRelease() ?: return@LaunchedEffect
+        if (isNewer(latest.tag, running)) release = latest
+    }
+    val available = release
+    if (available == null || dismissed) return
+    Row(
+        Modifier.fillMaxWidth().background(surface).padding(horizontal = 20.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "Version ${available.tag.removePrefix("v")} is available.",
+            color = textPrimary,
+            modifier = Modifier.weight(1f),
+        )
+        OutlinedButton(onClick = { openInBrowser(available.url) }) { Text("Download") }
+        TextButton(onClick = { dismissed = true }) { Text("Later") }
+    }
+}
+
+private fun openInBrowser(url: String) {
+    runCatching {
+        if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+            Desktop.getDesktop().browse(URI(url))
+        }
+    }
 }

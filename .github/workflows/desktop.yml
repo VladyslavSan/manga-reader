@@ -1,8 +1,9 @@
 name: Desktop
 
 on:
+  # No base-branch filter: a PR stacked on another branch needs checks too, and
+  # filtering on [main] silently gave those PRs no checks at all.
   pull_request:
-    branches: [main]
   push:
     branches: [main]
     tags: ['v*']

@@ -211,7 +211,9 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
     val chapterListState = rememberLazyListState()
     val readerListState = rememberLazyListState()
     val pageScrollStates = remember(chapter?.sourceId) { mutableMapOf<Int, ScrollState>() }
-    var horizontalViewportHeight by remember { mutableStateOf(0) }
+    // Measured from the reader itself in both modes. Deriving it from layoutInfo at
+    // keypress time made the step depend on where the list happened to be.
+    var readerViewportHeight by remember { mutableStateOf(0) }
     val pager = rememberPagerState(pageCount = { pages.size })
     val readerFocus = remember { FocusRequester() }
     val smallStep = with(LocalDensity.current) { 180.dp.toPx() }
@@ -332,11 +334,12 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
                         val page = pageScrollStates[pager.currentPage]
                         val exhausted = page == null || page.value >= page.maxValue
                         if (forward && exhausted && pager.currentPage == pages.lastIndex) openNextChapter()
-                        else page?.animateScrollBy(direction * horizontalViewportHeight.toFloat())
+                        else page?.animateScrollBy(direction * readerViewportHeight.toFloat())
                     } else if (forward && !readerListState.canScrollForward) {
                         openNextChapter()
                     } else {
-                        val height = readerListState.layoutInfo.run { viewportEndOffset - viewportStartOffset }
+                        val height = readerViewportHeight.takeIf { it > 0 }
+                            ?: readerListState.layoutInfo.run { viewportEndOffset - viewportStartOffset }
                         readerListState.animateScrollBy(direction * height.toFloat())
                     }
                 }
@@ -550,7 +553,7 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
                             repository, series, chapter, pages, horizontal, pageWidth, busy, readChapters, offlineChapters,
                             readerListState, pager, readerFocus,
                             pageScrollStates = pageScrollStates,
-                            onViewportHeight = { horizontalViewportHeight = it },
+                            onViewportHeight = { readerViewportHeight = it },
                             onGallery = { showGallery = true },
                             onSetRead = { read -> series?.let { s -> chapter?.let { setRead(s.sourceId, setOf(it.sourceId), read) } } },
                             onMarkThrough = ::markThroughCurrent,
@@ -851,7 +854,11 @@ private fun ReaderPane(
                 snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index == pages.lastIndex }
                     .distinctUntilChanged().collect { if (it) onSetRead(true) }
             }
-            LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize().onSizeChanged { onViewportHeight(it.height) },
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
                 itemsIndexed(pages, key = { _, it -> it.url }) { _, page ->
                     PageImage(repository, series!!, chapter!!, page, width, onCacheChanged)
                 }

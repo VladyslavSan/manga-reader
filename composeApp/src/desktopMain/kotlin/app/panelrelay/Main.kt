@@ -187,7 +187,6 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
     val pageWidth = settings.pageWidth
     val sidebarVisible = settings.sidebarVisible
     val hideToolbars = settings.hideToolbars
-    val hideSidebar = settings.hideSidebar
 
     fun updateSettings(updated: ReaderSettings) {
         settings = updated.normalized()
@@ -218,16 +217,15 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
     val readerFocus = remember { FocusRequester() }
     val smallStep = with(LocalDensity.current) { 180.dp.toPx() }
     val autoHideActive = hideToolbars && !showGallery
-    // Overlaid rather than laid out in the Row, so revealing it never resizes the
-    // reader and never rescales the page.
-    val autoHideSidebarActive = hideSidebar && !showGallery
     val upcomingChapter = nextChapterAfter(series?.chapters.orEmpty(), chapter?.sourceId)
     val atChapterEnd = pages.isNotEmpty() && if (horizontal) {
         val page = pageScrollStates[pager.currentPage]
         pager.currentPage == pages.lastIndex && (page == null || page.value >= page.maxValue)
     } else !readerListState.canScrollForward
-    val revealEdge = with(LocalDensity.current) { 12.dp.toPx() }
-    val hideBuffer = with(LocalDensity.current) { 16.dp.toPx() }
+    // Wide enough to hit without aiming. The bars hide again once the pointer
+    // leaves them, so an over-eager band costs little.
+    val revealEdge = with(LocalDensity.current) { 56.dp.toPx() }
+    val hideBuffer = with(LocalDensity.current) { 28.dp.toPx() }
 
     var sidebarEdge by remember { mutableStateOf(0f) }
 
@@ -361,7 +359,7 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
             pages = chapter?.pages.orEmpty()
         }
     }
-    LaunchedEffect(showGallery, chapter?.sourceId, sidebarVisible, hideToolbars, hideSidebar, toolbarsRevealed, busy, showAddDialog, showSettings) {
+    LaunchedEffect(showGallery, chapter?.sourceId, sidebarVisible, hideToolbars, toolbarsRevealed, busy, showAddDialog, showSettings) {
         if (!showGallery && !busy && !showAddDialog && !showSettings && !toolbarsRevealed) readerFocus.requestFocus()
     }
     LaunchedEffect(chapter?.sourceId, pages.size) {
@@ -408,11 +406,7 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
                     Switch(hideToolbars, { updateSettings(settings.copy(hideToolbars = it)) })
                 }
                 Text("Move to the top edge to reveal the bars. They hide when the pointer leaves the toolbar area.", color = textMuted)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Auto-hide sidebar while reading", Modifier.weight(1f))
-                    Switch(hideSidebar, { updateSettings(settings.copy(hideSidebar = it)) })
-                }
-                Text("The sidebar then opens over the page instead of shrinking it. Ctrl/Cmd+B still opens and closes it.", color = textMuted)
+                Text("The sidebar opens over the page instead of shrinking it, so the page never changes size. Ctrl/Cmd+B opens and closes it.", color = textMuted)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Horizontal pages", Modifier.weight(1f))
                     Switch(horizontal, { updateSettings(settings.copy(horizontal = it)) })
@@ -499,9 +493,9 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
 
     val appBar: @Composable () -> Unit = {
         Row(Modifier.fillMaxWidth().background(surface).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (sidebarVisible || !autoHideActive) IconButton(onClick = { updateSettings(settings.copy(sidebarVisible = !sidebarVisible)) }) {
+            IconButton(onClick = { updateSettings(settings.copy(sidebarVisible = !sidebarVisible)) }) {
                 Icon(SidebarIcon, if (sidebarVisible) "Hide sidebar (Ctrl/Cmd+B)" else "Show sidebar (Ctrl/Cmd+B)", tint = if (sidebarVisible) accent else textMuted)
-            } else Box(Modifier.width(48.dp).height(48.dp))
+            }
             Text("Manga Reader", Modifier.weight(1f), color = textMuted)
             if (!showGallery) IconButton(onClick = { updateSettings(settings.copy(hideToolbars = true)); toolbarsRevealed = false }) {
                 Icon(ToolbarIcon, "Auto-hide top bars")
@@ -533,23 +527,14 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
             }
     ) {
         Row(Modifier.fillMaxSize()) {
-            // Pinned: occupies a Row slot, so the reader pane is narrower by design.
-            androidx.compose.animation.AnimatedVisibility(
-                visible = sidebarVisible && !autoHideSidebarActive,
-                enter = expandHorizontally(tween(400, easing = FastOutSlowInEasing), expandFrom = Alignment.Start) +
-                    slideInHorizontally(tween(400, easing = FastOutSlowInEasing)) { -it } + fadeIn(tween(400, easing = FastOutSlowInEasing)),
-                exit = shrinkHorizontally(tween(400, easing = FastOutSlowInEasing), shrinkTowards = Alignment.Start) +
-                    slideOutHorizontally(tween(400, easing = FastOutSlowInEasing)) { -it } + fadeOut(tween(400, easing = FastOutSlowInEasing)),
-            ) {
-                sidebarPane()
-            }
-
             Box(Modifier.weight(1f).fillMaxHeight().onGloballyPositioned { sidebarEdge = it.positionInRoot().x }) {
                 Column(Modifier.fillMaxSize()) {
                     if (!autoHideActive) appBar()
-                    if (showGallery) GalleryPane(library, readChapters, offlineChapters, repository, { scope.launch { openSeries(it) } }, { showAddDialog = true }, Modifier.weight(1f))
-                    else Box(Modifier.weight(1f).fillMaxHeight()) {
-                        ReaderPane(
+                    // The sidebar shares this box with the page, so it draws over the
+                    // page but never over the app bar above it.
+                    Box(Modifier.weight(1f).fillMaxWidth()) {
+                        if (showGallery) GalleryPane(library, readChapters, offlineChapters, repository, { scope.launch { openSeries(it) } }, { showAddDialog = true }, Modifier.fillMaxSize())
+                        else ReaderPane(
                             repository, series, chapter, pages, horizontal, pageWidth, busy, readChapters, offlineChapters,
                             readerListState, pager, readerFocus,
                             pageScrollStates = pageScrollStates,
@@ -562,7 +547,14 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
                             onCacheChanged = { syncMetadata() },
                             modifier = Modifier.fillMaxSize(),
                         )
-
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = sidebarVisible,
+                            modifier = Modifier.align(Alignment.CenterStart),
+                            enter = slideInHorizontally(tween(400, easing = FastOutSlowInEasing)) { -it } + fadeIn(tween(400, easing = FastOutSlowInEasing)),
+                            exit = slideOutHorizontally(tween(400, easing = FastOutSlowInEasing)) { -it } + fadeOut(tween(400, easing = FastOutSlowInEasing)),
+                        ) {
+                            sidebarPane()
+                        }
                     }
                 }
                 if (autoHideActive) androidx.compose.animation.AnimatedVisibility(
@@ -584,15 +576,7 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
                     }
                 }
                 androidx.compose.animation.AnimatedVisibility(
-                    visible = sidebarVisible && autoHideSidebarActive,
-                    modifier = Modifier.align(Alignment.CenterStart),
-                    enter = slideInHorizontally(tween(400, easing = FastOutSlowInEasing)) { -it } + fadeIn(tween(400, easing = FastOutSlowInEasing)),
-                    exit = slideOutHorizontally(tween(400, easing = FastOutSlowInEasing)) { -it } + fadeOut(tween(400, easing = FastOutSlowInEasing)),
-                ) {
-                    sidebarPane()
-                }
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = !sidebarVisible && (autoHideActive || autoHideSidebarActive),
+                    visible = !sidebarVisible && autoHideActive,
                     modifier = Modifier.align(Alignment.TopStart).padding(start = 12.dp),
                     enter = fadeIn(tween(400, easing = FastOutSlowInEasing)),
                     exit = fadeOut(tween(400, easing = FastOutSlowInEasing)),

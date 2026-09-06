@@ -52,9 +52,9 @@ For development on macOS or Linux with JDK 21:
 ./gradlew :composeApp:run
 ```
 
-Native installers are built for Windows x64 and macOS (Apple Silicon and Intel).
-After a PR merges to `main`, download the matching installer from the latest
-successful [Desktop workflow run](https://github.com/VladyslavSan/manga-reader/actions/workflows/desktop.yml).
+Native installers are built for Windows x64 and macOS Apple Silicon. Every merge
+to `main` publishes them on the
+[Releases page](https://github.com/VladyslavSan/manga-reader/releases/latest).
 Installers include Java; these builds are unsigned and not notarized.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the PR workflow and CI details.

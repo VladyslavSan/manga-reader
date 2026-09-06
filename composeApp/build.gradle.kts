@@ -38,7 +38,7 @@ compose.desktop {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Exe)
             includeAllModules = true
             packageName = "Manga Reader"
-            packageVersion = "0.1.0"
+            packageVersion = providers.gradleProperty("appVersion").orElse("1.0.0").get()
             description = "A local-first manga reader"
             vendor = "Manga Reader"
             macOS {

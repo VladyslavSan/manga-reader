@@ -16,7 +16,7 @@ for 30 days, test reports for 14. Builds include a Java runtime, so users do not
 need to install Java separately.
 
 Releases are cut by tag, not by merge. Push a `v`-prefixed tag and the **Desktop**
-workflow builds it and publishes a GitHub Release with the three installers
+workflow builds it and publishes a GitHub Release with both installers
 attached:
 
 ```sh

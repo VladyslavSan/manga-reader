@@ -35,7 +35,7 @@ compose.desktop {
     application {
         mainClass = "app.panelrelay.MainKt"
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Exe)
+            targetFormats(TargetFormat.Dmg, TargetFormat.Exe)
             includeAllModules = true
             packageName = "Manga Reader"
             packageVersion = providers.gradleProperty("appVersion").orElse("1.0.0").get()

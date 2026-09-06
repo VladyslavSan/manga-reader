@@ -59,7 +59,7 @@ jobs:
           echo "Packaging version $version"
       # Version goes in as ORG_GRADLE_PROJECT_appVersion, not -PappVersion: on the
       # Windows runner the command-line form reached Gradle truncated at the first
-      # dot ("1" instead of "1.0.2"), and configuring the msi/exe then failed.
+      # dot ("1" instead of "1.0.2"), and configuring the Windows installer failed.
       - name: Test and package (macOS)
         if: runner.os == 'macOS'
         env:
@@ -72,15 +72,15 @@ jobs:
         run: .\gradlew.bat --no-daemon :composeApp:desktopTest :composeApp:packageDistributionForCurrentOS
       - name: Stage installers
         shell: bash
-        # upload-artifact roots an artifact at the least common ancestor of its files,
-        # so uploading msi/ and exe/ direct from the build dir would nest them. Staging
-        # flat keeps every artifact root-level, so the release job can glob dist/*.
-        # Runs on every build so a tag never exercises an untested path.
+        # jpackage names its output "Manga Reader-<version>.<ext>". Rename into one
+        # flat dir so release assets carry the platform and no percent-encoded spaces,
+        # and so the release job can glob dist/*. Runs on every build, so a tag never
+        # exercises an untested path.
         run: |
           set -euo pipefail
           mkdir -p staging
           cd composeApp/build/compose/binaries/main
-          for f in dmg/*.dmg msi/*.msi exe/*.exe; do
+          for f in dmg/*.dmg exe/*.exe; do
             [ -e "$f" ] || continue
             mv "$f" "$GITHUB_WORKSPACE/staging/manga-reader-${APP_VERSION}-${{ matrix.platform }}.${f##*.}"
           done
@@ -127,7 +127,7 @@ jobs:
         run: |
           set -euo pipefail
           ls -l dist
-          test "$(ls dist | wc -l)" -eq 3  # macOS dmg, plus msi + exe for Windows
+          test "$(ls dist | wc -l)" -eq 2  # one dmg, one exe
           gh release create "$GITHUB_REF_NAME" \
             --title "Manga Reader ${GITHUB_REF_NAME#v}" \
             --notes 'Installers are unsigned and macOS builds are not notarized, so the OS will warn on first launch. A Java runtime is bundled.' \

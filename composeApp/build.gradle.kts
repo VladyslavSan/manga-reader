@@ -8,6 +8,7 @@ plugins {
 }
 
 kotlin {
+    jvmToolchain(21)
     jvm("desktop")
 
     sourceSets {
@@ -15,7 +16,6 @@ kotlin {
             implementation(compose.runtime)
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
             implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
-            implementation("io.ktor:ktor-client-core:3.5.1")
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
@@ -34,11 +34,23 @@ compose.desktop {
     application {
         mainClass = "app.panelrelay.MainKt"
         nativeDistributions {
-            targetFormats(TargetFormat.Msi, TargetFormat.Exe)
+            targetFormats(TargetFormat.Dmg, TargetFormat.Exe)
+            // From `gradlew :composeApp:suggestRuntimeModules`. Bundling only these
+            // instead of every JDK module is most of the download size. Re-run that
+            // task after adding a dependency that reaches into a new part of the JDK.
+            modules("java.instrument", "java.management", "java.net.http", "jdk.unsupported")
             packageName = "Manga Reader"
-            packageVersion = "0.1.0"
+            packageVersion = providers.gradleProperty("appVersion").orElse("1.0.0").get()
             description = "A local-first manga reader"
             vendor = "Manga Reader"
+            macOS {
+                bundleID = "io.github.vladyslavsan.mangareader"
+            }
+            windows {
+                upgradeUuid = "f39292fc-d53d-4c31-9ee2-807b977b09bc"
+                menuGroup = "Manga Reader"
+                shortcut = true
+            }
         }
     }
 }

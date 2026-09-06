@@ -1,8 +1,5 @@
 package app.panelrelay.core
 
-import io.ktor.http.Parameters
-import io.ktor.http.formUrlEncode
-
 class MangaInUaProvider(private val http: NativeHttpTransport) : MangaProvider {
     override val id = "manga-in-ua"
     private val baseUrl = "https://manga.in.ua"
@@ -26,13 +23,13 @@ class MangaInUaProvider(private val http: NativeHttpTransport) : MangaProvider {
             ?: "Imported series"
         val cover = Regex("""<meta\s+property=["']og:image["']\s+content=["']([^"']+)""", RegexOption.IGNORE_CASE)
             .find(html)?.groupValues?.get(1)?.let(::decodeEntities)?.let(::absoluteUrl)
-        val form = Parameters.build {
-            append("action", "show")
-            append("news_id", seriesId)
-            append("news_category", category)
-            append("this_link", if (category == "54") url else "")
-            append("user_hash", hash)
-        }.formUrlEncode()
+        val form = formUrlEncode(
+            "action" to "show",
+            "news_id" to seriesId,
+            "news_category" to category,
+            "this_link" to if (category == "54") url else "",
+            "user_hash" to hash,
+        )
         val catalog = http.request(
             "$ajaxUrl?mod=load_chapters",
             method = "POST",
@@ -111,5 +108,28 @@ class MangaInUaProvider(private val http: NativeHttpTransport) : MangaProvider {
         value.startsWith("//") -> "https:$value"
         value.startsWith("/") -> "$baseUrl$value"
         else -> value
+    }
+}
+
+private const val HEX = "0123456789ABCDEF"
+
+/**
+ * Encodes fields as application/x-www-form-urlencoded. Replaces ktor's
+ * Parameters.formUrlEncode(), which pulled in the whole ktor-client tree for this
+ * one call. Percent-encodes everything outside the RFC 3986 unreserved set, which
+ * is never wrong - a server decodes "%7E" and "~" alike.
+ */
+internal fun formUrlEncode(vararg fields: Pair<String, String>): String =
+    fields.joinToString("&") { (name, value) -> "${encodeFormValue(name)}=${encodeFormValue(value)}" }
+
+internal fun encodeFormValue(value: String): String = buildString {
+    for (byte in value.encodeToByteArray()) {
+        val code = byte.toInt() and 0xFF
+        val char = code.toChar()
+        when {
+            char in 'A'..'Z' || char in 'a'..'z' || char in '0'..'9' || char in "-._~" -> append(char)
+            char == ' ' -> append('+')
+            else -> append('%').append(HEX[code shr 4]).append(HEX[code and 0x0F])
+        }
     }
 }

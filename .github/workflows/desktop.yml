@@ -41,12 +41,19 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: gradle
+      # Version goes in as ORG_GRADLE_PROJECT_appVersion, not -PappVersion: on the
+      # Windows runner the command-line form reached Gradle truncated at the first
+      # dot ("1" instead of "1.0.2"), and configuring the msi/exe then failed.
       - name: Test and package (macOS)
         if: runner.os == 'macOS'
-        run: ./gradlew --no-daemon -PappVersion=${{ env.APP_VERSION }} :composeApp:desktopTest :composeApp:packageDistributionForCurrentOS
+        env:
+          ORG_GRADLE_PROJECT_appVersion: ${{ env.APP_VERSION }}
+        run: ./gradlew --no-daemon :composeApp:desktopTest :composeApp:packageDistributionForCurrentOS
       - name: Test and package (Windows)
         if: runner.os == 'Windows'
-        run: .\gradlew.bat --no-daemon -PappVersion=${{ env.APP_VERSION }} :composeApp:desktopTest :composeApp:packageDistributionForCurrentOS
+        env:
+          ORG_GRADLE_PROJECT_appVersion: ${{ env.APP_VERSION }}
+        run: .\gradlew.bat --no-daemon :composeApp:desktopTest :composeApp:packageDistributionForCurrentOS
       - name: Stage installers
         shell: bash
         # upload-artifact roots an artifact at the least common ancestor of its files,
@@ -68,6 +75,7 @@ jobs:
           path: |
             composeApp/build/reports/tests/desktopTest/
             composeApp/build/test-results/desktopTest/
+            composeApp/build/compose/logs/
           retention-days: 14
           if-no-files-found: warn
       - name: Upload installers from main

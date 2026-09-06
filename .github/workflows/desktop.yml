@@ -76,12 +76,12 @@ jobs:
         if: runner.os == 'macOS'
         env:
           ORG_GRADLE_PROJECT_appVersion: ${{ env.APP_VERSION }}
-        run: ./gradlew --no-daemon :composeApp:desktopTest :composeApp:createDistributable
+        run: ./gradlew --no-daemon :composeApp:desktopTest :composeApp:createReleaseDistributable
       - name: Test and package (Windows)
         if: runner.os == 'Windows'
         env:
           ORG_GRADLE_PROJECT_appVersion: ${{ env.APP_VERSION }}
-        run: .\gradlew.bat --no-daemon :composeApp:desktopTest :composeApp:createDistributable
+        run: .\gradlew.bat --no-daemon :composeApp:desktopTest :composeApp:createReleaseDistributable
       # Zip on the build runner, not after upload: upload-artifact drops the
       # executable bit and follows symlinks, which would break a macOS .app bundle.
       - name: Package portable app (macOS)
@@ -91,7 +91,7 @@ jobs:
           set -euo pipefail
           mkdir -p staging
           shopt -s nullglob
-          apps=(composeApp/build/compose/binaries/main/app/*.app)
+          apps=(composeApp/build/compose/binaries/main-release/app/*.app)
           [ ${#apps[@]} -eq 1 ] || { echo "::error::expected one .app, found ${#apps[@]}"; exit 1; }
           ditto -c -k --keepParent "${apps[0]}" "staging/manga-reader-${APP_VERSION}-${{ matrix.platform }}.zip"
           ls -l staging
@@ -101,7 +101,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force -Path staging | Out-Null
-          $app = @(Get-ChildItem 'composeApp\build\compose\binaries\main\app' -Directory)
+          $app = @(Get-ChildItem 'composeApp\build\compose\binaries\main-release\app' -Directory)
           if ($app.Count -ne 1) { throw "expected one app directory, found $($app.Count)" }
           Compress-Archive -Path $app[0].FullName -DestinationPath "staging\manga-reader-$env:APP_VERSION-${{ matrix.platform }}.zip"
           Get-ChildItem staging

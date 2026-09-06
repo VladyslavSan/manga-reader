@@ -14,9 +14,12 @@ attaches its builds to the **Desktop** workflow run's **Artifacts** section, so 
 PR can be downloaded and run before merging. Build artifacts are kept for 30
 days, test reports for 14.
 
-CI ships a portable app image rather than an installer: `createDistributable`
-produces an app directory that is zipped and published as-is, so users unzip and
-run it. A Java runtime is bundled, so Java need not be installed. The zipping is
+CI ships a portable app image rather than an installer:
+`createReleaseDistributable` produces a ProGuard-minified app directory under
+`build/compose/binaries/main-release/`, which is zipped and published as-is, so
+users unzip and run it. The runtime bundles only the JDK modules listed in
+`build.gradle.kts`; re-run `:composeApp:suggestRuntimeModules` after adding a
+dependency that reaches into a new part of the JDK. A Java runtime is bundled, so Java need not be installed. The zipping is
 done on the build runner, because artifact upload drops the executable bit and
 follows symlinks, either of which breaks a macOS `.app` bundle. The `packageDmg`
 and `packageExe` tasks still work locally if an installer is ever wanted.

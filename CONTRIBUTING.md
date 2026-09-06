@@ -9,9 +9,11 @@ Run `./gradlew :composeApp:desktopTest` locally (Windows:
 and is excluded from CI.
 
 PR checks run tests and build installers on Windows x64 and macOS Apple Silicon.
-Merges to `main` run the same checks. Neither publishes anything; test reports
-are kept for 14 days. Builds include a Java runtime, so users do not need to
-install Java separately.
+Merges to `main` run the same checks. Neither publishes a release, but every run
+attaches its installers to the **Desktop** workflow run's **Artifacts** section,
+so a PR can be downloaded and run before merging. Installer artifacts are kept
+for 30 days, test reports for 14. Builds include a Java runtime, so users do not
+need to install Java separately.
 
 Releases are cut by tag, not by merge. Push a `v`-prefixed tag and the **Desktop**
 workflow builds it and publishes a GitHub Release with the three installers

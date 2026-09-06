@@ -90,7 +90,6 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -227,11 +226,18 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
     val revealEdge = with(LocalDensity.current) { 56.dp.toPx() }
     val hideBuffer = with(LocalDensity.current) { 28.dp.toPx() }
 
-    var sidebarEdge by remember { mutableStateOf(0f) }
+    // Matches the width Sidebar lays itself out at.
+    val sidebarWidth = with(LocalDensity.current) { 370.dp.toPx() }
+    var sidebarRevealed by remember { mutableStateOf(false) }
 
-    fun updateToolbarHover(x: Float, y: Float) {
-        if (!autoHideActive || showSettings || showAddDialog) return
-        toolbarsRevealed = x >= sidebarEdge && if (toolbarsRevealed) y <= revealedToolbarHeight + hideBuffer else y <= revealEdge
+    fun updateHover(x: Float, y: Float) {
+        if (showSettings || showAddDialog) return
+        if (autoHideActive) {
+            toolbarsRevealed = if (toolbarsRevealed) y <= revealedToolbarHeight + hideBuffer else y <= revealEdge
+        }
+        // The left edge reveals the sidebar, which then stays until the pointer
+        // leaves it - the same shape as the top bars, which only the bars had.
+        sidebarRevealed = if (sidebarRevealed) x <= sidebarWidth + hideBuffer else x <= revealEdge
     }
 
     LaunchedEffect(autoHideActive) { toolbarsRevealed = false }
@@ -506,9 +512,9 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
 
     Box(
         Modifier.fillMaxSize().background(background)
-            .onPointerEvent(PointerEventType.Move) { event -> event.changes.firstOrNull()?.let { updateToolbarHover(it.position.x, it.position.y) } }
-            .onPointerEvent(PointerEventType.Enter) { event -> event.changes.firstOrNull()?.let { updateToolbarHover(it.position.x, it.position.y) } }
-            .onPointerEvent(PointerEventType.Exit) { if (!showSettings && !showAddDialog) toolbarsRevealed = false }
+            .onPointerEvent(PointerEventType.Move) { event -> event.changes.firstOrNull()?.let { updateHover(it.position.x, it.position.y) } }
+            .onPointerEvent(PointerEventType.Enter) { event -> event.changes.firstOrNull()?.let { updateHover(it.position.x, it.position.y) } }
+            .onPointerEvent(PointerEventType.Exit) { if (!showSettings && !showAddDialog) { toolbarsRevealed = false; sidebarRevealed = false } }
             .onPreviewKeyEvent { event ->
                 if (event.key == Key.ShiftLeft || event.key == Key.ShiftRight) shiftPressed = event.type == KeyEventType.KeyDown
                 if (showAddDialog || showSettings || event.type != KeyEventType.KeyDown || event.isAltPressed) {
@@ -527,7 +533,7 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
             }
     ) {
         Row(Modifier.fillMaxSize()) {
-            Box(Modifier.weight(1f).fillMaxHeight().onGloballyPositioned { sidebarEdge = it.positionInRoot().x }) {
+            Box(Modifier.weight(1f).fillMaxHeight()) {
                 Column(Modifier.fillMaxSize()) {
                     if (!autoHideActive) appBar()
                     // The sidebar shares this box with the page, so it draws over the
@@ -548,7 +554,7 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
                             modifier = Modifier.fillMaxSize(),
                         )
                         androidx.compose.animation.AnimatedVisibility(
-                            visible = sidebarVisible,
+                            visible = sidebarVisible || sidebarRevealed,
                             modifier = Modifier.align(Alignment.CenterStart),
                             enter = slideInHorizontally(tween(400, easing = FastOutSlowInEasing)) { -it } + fadeIn(tween(400, easing = FastOutSlowInEasing)),
                             exit = slideOutHorizontally(tween(400, easing = FastOutSlowInEasing)) { -it } + fadeOut(tween(400, easing = FastOutSlowInEasing)),

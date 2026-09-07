@@ -404,15 +404,11 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
                 settingsSaveError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 Text("Reading", fontWeight = FontWeight.Bold)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Show sidebar", Modifier.weight(1f))
-                    Switch(sidebarVisible, { updateSettings(settings.copy(sidebarVisible = it)) })
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Auto-hide top bars while reading", Modifier.weight(1f))
                     Switch(hideToolbars, { updateSettings(settings.copy(hideToolbars = it)) })
                 }
-                Text("Move to the top edge to reveal the bars. They hide when the pointer leaves the toolbar area.", color = textMuted)
-                Text("The sidebar opens over the page instead of shrinking it, so the page never changes size. Ctrl/Cmd+B opens and closes it.", color = textMuted)
+                Text("Move to the top edge to reveal the bars. They hide when the pointer leaves them.", color = textMuted)
+                Text("The sidebar always opens over the page, so the page never changes size. Move to the left edge to peek at it, or press Ctrl/Cmd+B to keep it open.", color = textMuted)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Horizontal pages", Modifier.weight(1f))
                     Switch(horizontal, { updateSettings(settings.copy(horizontal = it)) })

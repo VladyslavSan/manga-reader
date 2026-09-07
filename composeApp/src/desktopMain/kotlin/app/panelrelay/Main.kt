@@ -63,6 +63,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -209,6 +210,7 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
     val chapterListState = rememberLazyListState()
     val readerListState = rememberLazyListState()
     val pageScrollStates = remember(chapter?.sourceId) { mutableMapOf<Int, ScrollState>() }
+    val pageAspects = remember(chapter?.sourceId) { mutableStateMapOf<String, Float>() }
     // Measured from the reader itself in both modes. Deriving it from layoutInfo at
     // keypress time made the step depend on where the list happened to be.
     var readerViewportHeight by remember { mutableStateOf(0) }
@@ -540,6 +542,7 @@ private fun ReaderApp(repository: MangaRepository, store: DesktopLibraryStore) {
                             repository, series, chapter, pages, horizontal, pageWidth, busy, readChapters, offlineChapters,
                             readerListState, pager, readerFocus,
                             pageScrollStates = pageScrollStates,
+                            pageAspects = pageAspects,
                             onViewportHeight = { readerViewportHeight = it },
                             onGallery = { showGallery = true },
                             onSetRead = { read -> series?.let { s -> chapter?.let { setRead(s.sourceId, setOf(it.sourceId), read) } } },
@@ -806,7 +809,8 @@ private fun ReaderPane(
     repository: MangaRepository, series: MangaSeries?, chapter: MangaChapter?, pages: List<MangaPage>,
     horizontal: Boolean, width: Float, busy: Boolean, read: Map<String, Set<String>>, offline: Map<String, Set<String>>,
     listState: androidx.compose.foundation.lazy.LazyListState, pager: androidx.compose.foundation.pager.PagerState,
-    focus: FocusRequester, pageScrollStates: MutableMap<Int, ScrollState>, onViewportHeight: (Int) -> Unit,
+    focus: FocusRequester, pageScrollStates: MutableMap<Int, ScrollState>,
+    pageAspects: MutableMap<String, Float>, onViewportHeight: (Int) -> Unit,
     onGallery: () -> Unit, onSetRead: (Boolean) -> Unit, onMarkThrough: () -> Unit,
     showToolbar: Boolean, onNavigate: (ReaderNavigationAction) -> Unit,
     onCacheChanged: () -> Unit, modifier: Modifier,
@@ -832,7 +836,7 @@ private fun ReaderPane(
                         .verticalScroll(scrollState).padding(10.dp),
                     contentAlignment = Alignment.TopCenter,
                 ) {
-                    PageImage(repository, series!!, chapter!!, pages[index], width, onCacheChanged)
+                    PageImage(repository, series!!, chapter!!, pages[index], width, pageAspects, onCacheChanged)
                 }
             }
         } else {
@@ -846,27 +850,38 @@ private fun ReaderPane(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 itemsIndexed(pages, key = { _, it -> it.url }) { _, page ->
-                    PageImage(repository, series!!, chapter!!, page, width, onCacheChanged)
+                    PageImage(repository, series!!, chapter!!, page, width, pageAspects, onCacheChanged)
                 }
             }
         }
     }
 }
 
+/**
+ * [aspects] keeps each page's width/height across recycling. Without it a page that
+ * scrolled out of the LazyColumn re-enters as a 520.dp placeholder, so scrolling back
+ * over-consumes items and then jumps when the bitmaps land - which read as "back went
+ * a whole image". The ratio governs the height in both states so they cannot differ.
+ */
 @Composable
 private fun PageImage(
     repository: MangaRepository, series: MangaSeries, chapter: MangaChapter, page: MangaPage,
-    width: Float, onCacheChanged: () -> Unit,
+    width: Float, aspects: MutableMap<String, Float>, onCacheChanged: () -> Unit,
 ) {
     val bitmap by produceState<ImageBitmap?>(null, series.sourceId, chapter.sourceId, page.url) {
         value = runCatching {
             val bytes = repository.loadPage(series.sourceId, chapter.sourceId, page)
             onCacheChanged()
-            Image.makeFromEncoded(bytes).toComposeImageBitmap()
+            Image.makeFromEncoded(bytes).toComposeImageBitmap().also {
+                aspects[page.url] = it.width.toFloat() / it.height
+            }
         }.getOrNull()
     }
+    val aspect = aspects[page.url]
     Box(
-        Modifier.fillMaxWidth(width).then(if (bitmap == null) Modifier.height(520.dp).background(surface) else Modifier),
+        Modifier.fillMaxWidth(width)
+            .then(if (aspect != null) Modifier.aspectRatio(aspect) else Modifier.height(520.dp))
+            .then(if (bitmap == null) Modifier.background(surface) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
         bitmap?.let { Image(it, "Page ${page.index}", Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth) }
